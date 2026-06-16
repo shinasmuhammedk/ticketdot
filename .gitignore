@@ -1,0 +1,57 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.out
+
+# Go build artifacts
+bin/
+dist/
+build/
+
+# Go test
+*.test
+coverage.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# Generated tickets/uploads
+uploads/
+tickets/
+
+# Air (if you use it later)
+.air.toml
+
+# Docker overrides
+docker-compose.override.yml
