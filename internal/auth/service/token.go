@@ -19,11 +19,14 @@ func GenerateAccessToken(user *model.User) (string, error) {
 		"exp":     time.Now().Add(15 * time.Minute).Unix(),
 	}
 
+	if user.OperatorID != nil {
+		claims["operator_id"] = *user.OperatorID
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	return token.SignedString([]byte(secret))
 }
-
 
 func ValidateAccessToken(tokenString string) (jwt.MapClaims, error) {
 	secret := os.Getenv("JWT_SECRET")

@@ -12,6 +12,7 @@ type contextKey string
 
 const UserIDKey contextKey = "user_id"
 const UserRoleKey contextKey = "user_role"
+const OperatorIDKey contextKey = "operator_id"
 
 func AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,9 +42,14 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		}
 
 		role, _ := claims["role"].(string)
+		operatorID, _ := claims["operator_id"].(string)
 
 		ctx := context.WithValue(r.Context(), UserIDKey, userID)
 		ctx = context.WithValue(ctx, UserRoleKey, role)
+
+		if operatorID != "" {
+			ctx = context.WithValue(ctx, OperatorIDKey, operatorID)
+		}
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -82,8 +82,8 @@ func (r *PostgresRepository) LockSeat(userID, scheduleID, seat string) (*model.L
 	}
 
 	return &model.LockSeatResponse{
-		ScheduleID:   scheduleID,
-		Seat:         seat,
+		ScheduleID:  scheduleID,
+		Seat:        seat,
 		LockExpires: lockExpires.Format(time.RFC3339),
 	}, nil
 }
@@ -114,6 +114,18 @@ func (r *PostgresRepository) ConfirmBooking(userID, scheduleID, seat string) (*m
 		return nil, errors.New("seat is not locked")
 	}
 
+	var amount float64
+
+	err = tx.Get(&amount, `
+	SELECT base_fare
+	FROM schedules
+	WHERE id = $1
+`, scheduleID)
+
+	if err != nil {
+		return nil, errors.New("schedule not found")
+	}
+
 	bookingRef := "TD-" + time.Now().Format("20060102150405")
 
 	_, err = tx.Exec(`
@@ -125,8 +137,8 @@ func (r *PostgresRepository) ConfirmBooking(userID, scheduleID, seat string) (*m
 			status,
 			amount
 		)
-		VALUES ($1, $2, $3, $4, 'confirmed', 350.00)
-	`, bookingRef, userID, scheduleID, seat)
+		VALUES ($1, $2, $3, $4, 'confirmed', $5)
+	`, bookingRef, userID, scheduleID, seat, amount)
 
 	if err != nil {
 		return nil, err
@@ -155,7 +167,6 @@ func (r *PostgresRepository) ConfirmBooking(userID, scheduleID, seat string) (*m
 	}, nil
 }
 
-
 func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, error) {
 	query := `
 		SELECT
@@ -180,7 +191,6 @@ func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, er
 	return bookings, nil
 }
 
-
 func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.CancelBookingResponse, error) {
 	tx, err := r.db.Beginx()
 	if err != nil {
@@ -189,9 +199,9 @@ func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.Ca
 	defer tx.Rollback()
 
 	var booking struct {
-		ScheduleID  string `db:"schedule_id"`
-		SeatNumber  string `db:"seat_number"`
-		Status      string `db:"status"`
+		ScheduleID string `db:"schedule_id"`
+		SeatNumber string `db:"seat_number"`
+		Status     string `db:"status"`
 	}
 
 	err = tx.Get(&booking, `

@@ -27,6 +27,7 @@ func (r *PostgresRepository) GetUserByEmail(email string) (*model.User, error) {
 			phone,
 			password_hash,
 			role,
+            operator_id,
 			email_verified
 		FROM users
 		WHERE email = $1
@@ -84,6 +85,7 @@ func (r *PostgresRepository) GetUserByID(id string) (*model.User, error) {
 			phone,
 			password_hash,
 			role,
+            operator_id,
 			email_verified
 		FROM users
 		WHERE id = $1
@@ -97,4 +99,22 @@ func (r *PostgresRepository) GetUserByID(id string) (*model.User, error) {
 	}
 
 	return &user, nil
+}
+
+
+func (r *PostgresRepository) GetOperatorIDByUserID(userID string) (string, error) {
+	var operatorID string
+
+	err := r.db.Get(&operatorID, `
+		SELECT operator_id
+		FROM users
+		WHERE id = $1
+		  AND operator_id IS NOT NULL
+	`, userID)
+
+	if err != nil {
+		return "", err
+	}
+
+	return operatorID, nil
 }

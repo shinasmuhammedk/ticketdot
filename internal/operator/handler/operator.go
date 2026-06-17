@@ -2,9 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
-	// authmiddleware "ticketdot/internal/auth/middleware"
+	authmiddleware "ticketdot/internal/auth/middleware"
 	"ticketdot/internal/operator/model"
 	"ticketdot/internal/operator/service"
 )
@@ -20,12 +21,14 @@ func NewOperatorHandler(service *service.OperatorService) *OperatorHandler {
 }
 
 func (h *OperatorHandler) CreateBus(w http.ResponseWriter, r *http.Request) {
-	// operatorID, ok := r.Context().Value(authmiddleware.OperatorIDKey).(string)
-	// if !ok {
-	// 	http.Error(w, "operator id not found", http.StatusUnauthorized)
-	// 	return
-	// }
-    operatorID := "acc0ab14-6ef9-4266-bdc0-914ebdd93807"
+	operatorID, ok := r.Context().Value(authmiddleware.OperatorIDKey).(string)
+	if !ok {
+		http.Error(w, "operator id not found", http.StatusUnauthorized)
+		return
+	}
+	// operatorID := "acc0ab14-6ef9-4266-bdc0-914ebdd93807"
+
+	log.Println("Operator ID:", operatorID)
 
 	var req model.CreateBusRequest
 
@@ -48,7 +51,6 @@ func (h *OperatorHandler) CreateBus(w http.ResponseWriter, r *http.Request) {
 		"data":    bus,
 	})
 }
-
 
 func (h *OperatorHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateRouteRequest
@@ -74,7 +76,12 @@ func (h *OperatorHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OperatorHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
-	operatorID := "acc0ab14-6ef9-4266-bdc0-914ebdd93807"
+	// operatorID := "acc0ab14-6ef9-4266-bdc0-914ebdd93807"
+	operatorID, ok := r.Context().Value(authmiddleware.OperatorIDKey).(string)
+	if !ok {
+		http.Error(w, "operator id not found", http.StatusUnauthorized)
+		return
+	}
 
 	var req model.CreateScheduleRequest
 
@@ -98,9 +105,14 @@ func (h *OperatorHandler) CreateSchedule(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-
 func (h *OperatorHandler) GetBookings(w http.ResponseWriter, r *http.Request) {
-	operatorID := "acc0ab14-6ef9-4266-bdc0-914ebdd93807"
+	// operatorID := "acc0ab14-6ef9-4266-bdc0-914ebdd93807"
+
+	operatorID, ok := r.Context().Value(authmiddleware.OperatorIDKey).(string)
+	if !ok {
+		http.Error(w, "operator id not found", http.StatusUnauthorized)
+		return
+	}
 
 	bookings, err := h.service.GetBookings(operatorID)
 	if err != nil {

@@ -26,6 +26,7 @@ func (s *OperatorService) CreateBus(
 	operatorID = strings.TrimSpace(operatorID)
 	req.RegistrationNo = strings.TrimSpace(strings.ToUpper(req.RegistrationNo))
 	req.BusType = strings.TrimSpace(strings.ToUpper(req.BusType))
+    
 
 	if operatorID == "" {
 		return nil, errors.New("operator id is required")
