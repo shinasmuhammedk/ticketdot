@@ -26,7 +26,6 @@ func (s *OperatorService) CreateBus(
 	operatorID = strings.TrimSpace(operatorID)
 	req.RegistrationNo = strings.TrimSpace(strings.ToUpper(req.RegistrationNo))
 	req.BusType = strings.TrimSpace(strings.ToUpper(req.BusType))
-    
 
 	if operatorID == "" {
 		return nil, errors.New("operator id is required")
@@ -117,4 +116,17 @@ func (s *OperatorService) GetBookings(
 	}
 
 	return s.repo.GetBookings(operatorID)
+}
+
+func (s *OperatorService) GetBuses(
+	operatorID string,
+) ([]model.CreateBusResponse, error) {
+
+	operatorID = strings.TrimSpace(operatorID)
+
+	if operatorID == "" {
+		return nil, errors.New("operator id is required")
+	}
+
+	return s.repo.GetBuses(operatorID)
 }

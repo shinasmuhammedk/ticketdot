@@ -127,3 +127,25 @@ func (h *OperatorHandler) GetBookings(w http.ResponseWriter, r *http.Request) {
 		"data":  bookings,
 	})
 }
+
+func (h *OperatorHandler) GetBuses(w http.ResponseWriter, r *http.Request) {
+
+	operatorID, ok := r.Context().Value(authmiddleware.OperatorIDKey).(string)
+	if !ok {
+		http.Error(w, "operator id not found", http.StatusUnauthorized)
+		return
+	}
+
+	buses, err := h.service.GetBuses(operatorID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"count": len(buses),
+		"data":  buses,
+	})
+}

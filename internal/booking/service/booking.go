@@ -101,3 +101,26 @@ func (s *BookingService) CancelBooking(
 
 	return s.repo.CancelBooking(userID, bookingRef)
 }
+
+
+func (s *BookingService) GetBookingDetails(
+	userID string,
+	bookingRef string,
+) (*model.BookingDetailsResponse, error) {
+
+	userID = strings.TrimSpace(userID)
+	bookingRef = strings.TrimSpace(bookingRef)
+
+	if userID == "" {
+		return nil, errors.New("user id is required")
+	}
+
+	if bookingRef == "" {
+		return nil, errors.New("booking reference is required")
+	}
+
+	return s.repo.GetBookingDetails(
+		userID,
+		bookingRef,
+	)
+}

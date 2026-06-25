@@ -256,3 +256,37 @@ func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.Ca
 		Message:    "booking cancelled successfully",
 	}, nil
 }
+
+
+func (r *PostgresRepository) GetBookingDetails(
+	userID,
+	bookingRef string,
+) (*model.BookingDetailsResponse, error) {
+
+	var booking model.BookingDetailsResponse
+
+	query := `
+		SELECT
+			booking_ref,
+			schedule_id,
+			seat_number,
+			status,
+			amount
+		FROM bookings
+		WHERE booking_ref = $1
+		  AND user_id = $2
+	`
+
+	err := r.db.Get(
+		&booking,
+		query,
+		bookingRef,
+		userID,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &booking, nil
+}

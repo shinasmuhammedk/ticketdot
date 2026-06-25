@@ -238,3 +238,34 @@ func (r *PostgresRepository) GetBookings(
 
 	return bookings, nil
 }
+
+
+func (r *PostgresRepository) GetBuses(
+	operatorID string,
+) ([]model.CreateBusResponse, error) {
+
+	var buses []model.CreateBusResponse
+
+	query := `
+		SELECT
+			id,
+			registration_no,
+			bus_type,
+			total_seats
+		FROM buses
+		WHERE operator_id = $1
+		ORDER BY created_at DESC
+	`
+
+	err := r.db.Select(
+		&buses,
+		query,
+		operatorID,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return buses, nil
+}
