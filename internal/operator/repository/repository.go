@@ -8,4 +8,7 @@ type OperatorRepository interface {
 	CreateSchedule(operatorID string, req model.CreateScheduleRequest) (*model.CreateScheduleResponse, error)
 	GetBookings(operatorID string) ([]model.OperatorBooking, error)
 	GetBuses(operatorID string) ([]model.CreateBusResponse, error)
+    
+    GetRoutes(operatorID string) ([]model.RouteResponse, error)
+    GetSchedules(operatorID string) ([]model.ScheduleResponse, error)
 }

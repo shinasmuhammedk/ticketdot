@@ -149,3 +149,89 @@ func (h *OperatorHandler) GetBuses(w http.ResponseWriter, r *http.Request) {
 		"data":  buses,
 	})
 }
+
+
+func (h *OperatorHandler) GetRoutes(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	operatorID, ok := r.Context().
+		Value(authmiddleware.OperatorIDKey).
+		(string)
+
+	if !ok {
+		http.Error(
+			w,
+			"unauthorized",
+			http.StatusUnauthorized,
+		)
+		return
+	}
+
+	routes, err := h.service.GetRoutes(
+		operatorID,
+	)
+
+	if err != nil {
+		http.Error(
+			w,
+			err.Error(),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"count": len(routes),
+		"data":  routes,
+	})
+}
+
+
+func (h *OperatorHandler) GetSchedules(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	operatorID, ok := r.Context().
+		Value(authmiddleware.OperatorIDKey).
+		(string)
+
+	if !ok {
+		http.Error(
+			w,
+			"unauthorized",
+			http.StatusUnauthorized,
+		)
+		return
+	}
+
+	schedules, err := h.service.GetSchedules(
+		operatorID,
+	)
+
+	if err != nil {
+		http.Error(
+			w,
+			err.Error(),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"count": len(schedules),
+		"data":  schedules,
+	})
+}

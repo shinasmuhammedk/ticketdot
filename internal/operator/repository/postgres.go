@@ -269,3 +269,102 @@ func (r *PostgresRepository) GetBuses(
 
 	return buses, nil
 }
+
+
+func (r *PostgresRepository) GetRoutes(
+	operatorID string,
+) ([]model.RouteResponse, error) {
+
+	var routes []model.RouteResponse
+
+	query := `
+	SELECT
+		rt.id,
+		oc.name AS origin,
+		dc.name AS destination
+	FROM routes rt
+
+	JOIN cities oc
+		ON rt.origin_id = oc.id
+
+	JOIN cities dc
+		ON rt.destination_id = dc.id
+
+	WHERE EXISTS (
+		SELECT 1
+		FROM schedules s
+		WHERE s.route_id = rt.id
+		AND s.operator_id = $1
+	)
+
+	ORDER BY oc.name
+	`
+
+	err := r.db.Select(
+		&routes,
+		query,
+		operatorID,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return routes, nil
+}
+
+
+func (r *PostgresRepository) GetSchedules(
+	operatorID string,
+) ([]model.ScheduleResponse, error) {
+
+	var schedules []model.ScheduleResponse
+
+	query := `
+	SELECT
+		s.id,
+
+		oc.name AS origin,
+		dc.name AS destination,
+
+		b.registration_no AS bus_number,
+		b.bus_type AS bus_type,
+
+		s.departure_time::text AS departure_time,
+		s.arrival_time::text AS arrival_time,
+
+		s.available_seats,
+		s.base_fare,
+		s.status
+
+	FROM schedules s
+
+	JOIN routes rt
+		ON s.route_id = rt.id
+
+	JOIN cities oc
+		ON rt.origin_id = oc.id
+
+	JOIN cities dc
+		ON rt.destination_id = dc.id
+
+	JOIN buses b
+		ON s.bus_id = b.id
+
+	WHERE s.operator_id = $1
+
+	ORDER BY s.departure_time DESC
+	`
+
+	err := r.db.Select(
+		&schedules,
+		query,
+		operatorID,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return schedules, nil
+}

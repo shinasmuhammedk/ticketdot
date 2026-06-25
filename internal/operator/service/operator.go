@@ -130,3 +130,27 @@ func (s *OperatorService) GetBuses(
 
 	return s.repo.GetBuses(operatorID)
 }
+
+func (s *OperatorService) GetRoutes(
+	operatorID string,
+) ([]model.RouteResponse, error) {
+
+	if strings.TrimSpace(operatorID) == "" {
+		return nil, errors.New("operator id required")
+	}
+
+	return s.repo.GetRoutes(operatorID)
+}
+
+func (s *OperatorService) GetSchedules(
+	operatorID string,
+) ([]model.ScheduleResponse, error) {
+
+	operatorID = strings.TrimSpace(operatorID)
+
+	if operatorID == "" {
+		return nil, errors.New("operator id required")
+	}
+
+	return s.repo.GetSchedules(operatorID)
+}

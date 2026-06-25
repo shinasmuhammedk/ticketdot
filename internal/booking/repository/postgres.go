@@ -257,7 +257,6 @@ func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.Ca
 	}, nil
 }
 
-
 func (r *PostgresRepository) GetBookingDetails(
 	userID,
 	bookingRef string,
@@ -266,15 +265,50 @@ func (r *PostgresRepository) GetBookingDetails(
 	var booking model.BookingDetailsResponse
 
 	query := `
-		SELECT
-			booking_ref,
-			schedule_id,
-			seat_number,
-			status,
-			amount
-		FROM bookings
-		WHERE booking_ref = $1
-		  AND user_id = $2
+	SELECT
+    b.booking_ref,
+    b.seat_number,
+    b.status,
+    b.amount,
+
+    u.name AS passenger_name,
+
+    op.name AS operator_name,
+
+    oc.name AS origin,
+    dc.name AS destination,
+
+    bus.registration_no AS bus_number,
+    bus.bus_type AS bus_type,
+
+    s.departure_time::text AS departure_time,
+    s.arrival_time::text AS arrival_time
+
+FROM bookings b
+
+JOIN users u
+    ON b.user_id = u.id
+
+JOIN schedules s
+    ON b.schedule_id = s.id
+
+JOIN routes rt
+    ON s.route_id = rt.id
+
+JOIN cities oc
+    ON rt.origin_id = oc.id
+
+JOIN cities dc
+    ON rt.destination_id = dc.id
+
+JOIN buses bus
+    ON s.bus_id = bus.id
+
+JOIN operators op
+    ON bus.operator_id = op.id
+
+WHERE b.booking_ref = $1
+AND b.user_id = $2
 	`
 
 	err := r.db.Get(

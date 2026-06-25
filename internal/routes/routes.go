@@ -65,8 +65,10 @@ func SetupRoutes(h Handlers) http.Handler {
 		r.Post("/operator/routes", h.Operator.CreateRoute)
 		r.Post("/operator/schedules", h.Operator.CreateSchedule)
 		r.Get("/operator/bookings", h.Operator.GetBookings)
-        
-        r.Get("/operator/buses", h.Operator.GetBuses)
+
+		r.Get("/operator/buses", h.Operator.GetBuses)
+		r.Get("/operator/routes", h.Operator.GetRoutes)
+		r.Get("/operator/schedules",h.Operator.GetSchedules)
 	})
 
 	return r
