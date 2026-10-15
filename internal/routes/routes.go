@@ -31,6 +31,8 @@ func SetupRoutes(h Handlers) http.Handler {
 
 	r.Post("/auth/signup", h.Auth.Signup)
 	r.Post("/auth/login", h.Auth.Login)
+	r.Post("/auth/forgot-password", h.Auth.ForgotPassword)
+	r.Post("/auth/reset-password", h.Auth.ResetPassword)
 
 	r.Get("/buses/search", h.Search.SearchBuses)
 	r.Get("/buses/{scheduleID}", h.Search.GetScheduleDetails)

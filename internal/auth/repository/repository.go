@@ -7,4 +7,8 @@ type AuthRepository interface {
 	GetUserByEmail(email string) (*model.User, error)
 	GetUserByID(id string) (*model.User, error)
 	GetOperatorIDByUserID(userID string) (string, error)
+	CreatePasswordReset(reset *model.PasswordReset) error
+	GetValidPasswordReset(token string) (*model.PasswordReset, error)
+	MarkPasswordResetUsed(token string) error
+	UpdateUserPassword(userID string, passwordHash string) error
 }
