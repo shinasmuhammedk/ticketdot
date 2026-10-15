@@ -47,9 +47,11 @@ func (s *OperatorService) CreateBus(
 }
 
 func (s *OperatorService) CreateRoute(
+	operatorID string,
 	req model.CreateRouteRequest,
 ) (*model.CreateRouteResponse, error) {
 
+	operatorID = strings.TrimSpace(operatorID)
 	req.OriginCityID = strings.TrimSpace(req.OriginCityID)
 	req.DestinationCityID = strings.TrimSpace(req.DestinationCityID)
 
@@ -65,7 +67,7 @@ func (s *OperatorService) CreateRoute(
 		return nil, errors.New("origin and destination cannot be the same")
 	}
 
-	return s.repo.CreateRoute(req)
+	return s.repo.CreateRoute(operatorID, req)
 }
 
 func (s *OperatorService) CreateSchedule(operatorID string, req model.CreateScheduleRequest) (*model.CreateScheduleResponse, error) {
@@ -92,10 +94,6 @@ func (s *OperatorService) CreateSchedule(operatorID string, req model.CreateSche
 
 	if req.ArrivalTime == "" {
 		return nil, errors.New("arrival time is required")
-	}
-
-	if req.AvailableSeats <= 0 {
-		return nil, errors.New("available seats must be greater than zero")
 	}
 
 	if req.BaseFare <= 0 {
@@ -153,4 +151,35 @@ func (s *OperatorService) GetSchedules(
 	}
 
 	return s.repo.GetSchedules(operatorID)
+}
+
+func (s *OperatorService) GetDashboardStats(
+	operatorID string,
+) (*model.DashboardStats, error) {
+
+	return s.repo.GetDashboardStats(operatorID)
+}
+
+func (s *OperatorService) UpdateBus(
+	busID string,
+	operatorID string,
+	req *model.UpdateBusRequest,
+) error {
+
+	return s.repo.UpdateBus(
+		busID,
+		operatorID,
+		req,
+	)
+}
+
+func (s *OperatorService) DeleteBus(
+	busID string,
+	operatorID string,
+) error {
+
+	return s.repo.DeleteBus(
+		busID,
+		operatorID,
+	)
 }

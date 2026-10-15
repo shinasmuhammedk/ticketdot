@@ -12,3 +12,9 @@ type CreateBusResponse struct {
 	BusType        string `db:"bus_type" json:"bus_type"`
 	TotalSeats     int    `db:"total_seats" json:"total_seats"`
 }
+
+type UpdateBusRequest struct {
+	RegistrationNo string `json:"registration_no"`
+	BusType        string `json:"bus_type"`
+	TotalSeats     int    `json:"total_seats"`
+}

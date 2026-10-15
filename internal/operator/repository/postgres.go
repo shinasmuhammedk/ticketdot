@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"database/sql"
+
 	"github.com/jmoiron/sqlx"
 
 	"ticketdot/internal/operator/model"
@@ -88,15 +90,17 @@ func (r *PostgresRepository) CreateBus(
 }
 
 func (r *PostgresRepository) CreateRoute(
+	operatorID string,
 	req model.CreateRouteRequest,
 ) (*model.CreateRouteResponse, error) {
 
 	query := `
 		INSERT INTO routes (
 			origin_id,
-			destination_id
+			destination_id,
+			operator_id
 		)
-		VALUES ($1, $2)
+		VALUES ($1, $2, NULLIF($3, '')::uuid)
 		RETURNING id, origin_id, destination_id
 	`
 
@@ -106,6 +110,7 @@ func (r *PostgresRepository) CreateRoute(
 		query,
 		req.OriginCityID,
 		req.DestinationCityID,
+		operatorID,
 	).Scan(
 		&route.ID,
 		&route.OriginCityID,
@@ -119,7 +124,6 @@ func (r *PostgresRepository) CreateRoute(
 	return &route, nil
 }
 
-
 func (r *PostgresRepository) CreateSchedule(
 	operatorID string,
 	req model.CreateScheduleRequest,
@@ -130,6 +134,16 @@ func (r *PostgresRepository) CreateSchedule(
 		return nil, err
 	}
 	defer tx.Rollback()
+
+	var totalSeats int
+	err = tx.Get(&totalSeats, `
+		SELECT COUNT(*)
+		FROM seat_layouts
+		WHERE bus_id = $1
+	`, req.BusID)
+	if err != nil {
+		return nil, err
+	}
 
 	var schedule model.CreateScheduleResponse
 
@@ -162,7 +176,7 @@ func (r *PostgresRepository) CreateSchedule(
 		operatorID,
 		req.DepartureTime,
 		req.ArrivalTime,
-		req.AvailableSeats,
+		totalSeats,
 		req.BaseFare,
 	).Scan(
 		&schedule.ID,
@@ -218,15 +232,35 @@ func (r *PostgresRepository) GetBookings(
 		SELECT
 			b.booking_ref,
 			b.schedule_id,
-			b.seat_number,
+			COALESCE(u.name, 'Passenger') AS passenger_name,
+			COALESCE(u.email, '') AS passenger_email,
+			COALESCE(u.phone, '') AS passenger_phone,
+			oc.name AS origin,
+			dc.name AS destination,
+			COALESCE(bus.registration_no, '') AS bus_number,
+			STRING_AGG(b.seat_number, ', ' ORDER BY b.seat_number) AS seat_number,
 			b.status,
-			b.amount,
-			b.confirmed_at
+			COALESCE(SUM(b.amount), 0) AS amount,
+			COALESCE(MIN(b.confirmed_at), NOW()) AS confirmed_at
 		FROM bookings b
-		JOIN schedules s
-			ON b.schedule_id = s.id
+		JOIN schedules s ON b.schedule_id = s.id
+		LEFT JOIN users u ON b.user_id = u.id
+		JOIN routes r ON s.route_id = r.id
+		JOIN cities oc ON r.origin_id = oc.id
+		JOIN cities dc ON r.destination_id = dc.id
+		JOIN buses bus ON s.bus_id = bus.id
 		WHERE s.operator_id = $1
-		ORDER BY b.confirmed_at DESC
+		GROUP BY
+			b.booking_ref,
+			b.schedule_id,
+			u.name,
+			u.email,
+			u.phone,
+			oc.name,
+			dc.name,
+			bus.registration_no,
+			b.status
+		ORDER BY confirmed_at DESC
 	`
 
 	bookings := []model.OperatorBooking{}
@@ -238,7 +272,6 @@ func (r *PostgresRepository) GetBookings(
 
 	return bookings, nil
 }
-
 
 func (r *PostgresRepository) GetBuses(
 	operatorID string,
@@ -270,7 +303,6 @@ func (r *PostgresRepository) GetBuses(
 	return buses, nil
 }
 
-
 func (r *PostgresRepository) GetRoutes(
 	operatorID string,
 ) ([]model.RouteResponse, error) {
@@ -290,7 +322,8 @@ func (r *PostgresRepository) GetRoutes(
 	JOIN cities dc
 		ON rt.destination_id = dc.id
 
-	WHERE EXISTS (
+	WHERE (rt.operator_id = $1 OR rt.operator_id IS NULL)
+	   OR EXISTS (
 		SELECT 1
 		FROM schedules s
 		WHERE s.route_id = rt.id
@@ -312,7 +345,6 @@ func (r *PostgresRepository) GetRoutes(
 
 	return routes, nil
 }
-
 
 func (r *PostgresRepository) GetSchedules(
 	operatorID string,
@@ -367,4 +399,131 @@ func (r *PostgresRepository) GetSchedules(
 	}
 
 	return schedules, nil
+}
+
+func (r *PostgresRepository) GetDashboardStats(
+	operatorID string,
+) (*model.DashboardStats, error) {
+
+	var stats model.DashboardStats
+
+	query := `
+	SELECT
+	(
+		SELECT COUNT(*)
+		FROM buses
+		WHERE operator_id = $1
+	) AS total_buses,
+
+	(
+		SELECT COUNT(*)
+		FROM routes rt
+		JOIN schedules s
+			ON rt.id = s.route_id
+		WHERE s.operator_id = $1
+	) AS total_routes,
+
+	(
+		SELECT COUNT(*)
+		FROM schedules
+		WHERE operator_id = $1
+	) AS total_schedules,
+
+	(
+		SELECT COUNT(*)
+		FROM bookings b
+		JOIN schedules s
+			ON b.schedule_id = s.id
+		WHERE s.operator_id = $1
+	) AS total_bookings,
+
+	COALESCE(
+	(
+		SELECT SUM(b.amount)
+		FROM bookings b
+		JOIN schedules s
+			ON b.schedule_id = s.id
+		WHERE s.operator_id = $1
+	),0) AS total_revenue
+	`
+
+	err := r.db.Get(
+		&stats,
+		query,
+		operatorID,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &stats, nil
+}
+
+func (r *PostgresRepository) UpdateBus(
+	busID string,
+	operatorID string,
+	req *model.UpdateBusRequest,
+) error {
+
+	query := `
+	UPDATE buses
+	SET
+		registration_no = $1,
+		bus_type = $2,
+		total_seats = $3
+	WHERE id = $4
+	AND operator_id = $5
+	`
+
+	result, err := r.db.Exec(
+		query,
+		req.RegistrationNo,
+		req.BusType,
+		req.TotalSeats,
+		busID,
+		operatorID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	rows, _ := result.RowsAffected()
+
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
+}
+
+func (r *PostgresRepository) DeleteBus(
+	busID string,
+	operatorID string,
+) error {
+
+	query := `
+    DELETE FROM buses
+    WHERE id = $1
+    AND operator_id = $2
+    `
+
+	result, err := r.db.Exec(
+		query,
+		busID,
+		operatorID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	rows, _ := result.RowsAffected()
+
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+
+	return nil
 }

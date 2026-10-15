@@ -18,6 +18,16 @@ func NewBookingService(repo repository.BookingRepository) *BookingService {
 	}
 }
 
+func extractSeats(single string, multiple []string) []string {
+	var seats []string
+	if len(multiple) > 0 {
+		seats = append(seats, multiple...)
+	} else if strings.TrimSpace(single) != "" {
+		seats = append(seats, strings.TrimSpace(single))
+	}
+	return seats
+}
+
 func (s *BookingService) LockSeat(
 	userID string,
 	req model.LockSeatRequest,
@@ -25,7 +35,7 @@ func (s *BookingService) LockSeat(
 
 	userID = strings.TrimSpace(userID)
 	req.ScheduleID = strings.TrimSpace(req.ScheduleID)
-	req.Seat = strings.TrimSpace(strings.ToUpper(req.Seat))
+	seats := extractSeats(req.Seat, req.Seats)
 
 	if userID == "" {
 		return nil, errors.New("user id is required")
@@ -35,17 +45,16 @@ func (s *BookingService) LockSeat(
 		return nil, errors.New("schedule id is required")
 	}
 
-	if req.Seat == "" {
-		return nil, errors.New("seat is required")
+	if len(seats) == 0 {
+		return nil, errors.New("at least one seat is required")
 	}
 
-	return s.repo.LockSeat(
+	return s.repo.LockSeats(
 		userID,
 		req.ScheduleID,
-		req.Seat,
+		seats,
 	)
 }
-
 
 func (s *BookingService) ConfirmBooking(
 	userID string,
@@ -54,7 +63,7 @@ func (s *BookingService) ConfirmBooking(
 
 	userID = strings.TrimSpace(userID)
 	req.ScheduleID = strings.TrimSpace(req.ScheduleID)
-	req.Seat = strings.TrimSpace(strings.ToUpper(req.Seat))
+	seats := extractSeats(req.Seat, req.Seats)
 
 	if userID == "" {
 		return nil, errors.New("user id is required")
@@ -64,13 +73,36 @@ func (s *BookingService) ConfirmBooking(
 		return nil, errors.New("schedule id is required")
 	}
 
-	if req.Seat == "" {
-		return nil, errors.New("seat is required")
+	if len(seats) == 0 {
+		return nil, errors.New("at least one seat is required")
 	}
 
-	return s.repo.ConfirmBooking(userID, req.ScheduleID, req.Seat)
+	return s.repo.ConfirmBooking(userID, req.ScheduleID, seats)
 }
 
+func (s *BookingService) ReleaseSeats(
+	userID string,
+	req model.ReleaseSeatsRequest,
+) (*model.ReleaseSeatsResponse, error) {
+
+	userID = strings.TrimSpace(userID)
+	req.ScheduleID = strings.TrimSpace(req.ScheduleID)
+	seats := extractSeats(req.Seat, req.Seats)
+
+	if userID == "" {
+		return nil, errors.New("user id is required")
+	}
+
+	if req.ScheduleID == "" {
+		return nil, errors.New("schedule id is required")
+	}
+
+	if len(seats) == 0 {
+		return nil, errors.New("at least one seat is required")
+	}
+
+	return s.repo.ReleaseSeats(userID, req.ScheduleID, seats)
+}
 
 func (s *BookingService) GetMyBookings(userID string) ([]model.MyBooking, error) {
 	userID = strings.TrimSpace(userID)
@@ -81,7 +113,6 @@ func (s *BookingService) GetMyBookings(userID string) ([]model.MyBooking, error)
 
 	return s.repo.GetMyBookings(userID)
 }
-
 
 func (s *BookingService) CancelBooking(
 	userID string,
@@ -101,7 +132,6 @@ func (s *BookingService) CancelBooking(
 
 	return s.repo.CancelBooking(userID, bookingRef)
 }
-
 
 func (s *BookingService) GetBookingDetails(
 	userID string,

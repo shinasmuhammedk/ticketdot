@@ -43,7 +43,6 @@ func (r *PostgresRepository) GetUserByEmail(email string) (*model.User, error) {
 	return &user, nil
 }
 
-
 func (r *PostgresRepository) CreateUser(user *model.User) error {
 	query := `
 		INSERT INTO users (
@@ -100,7 +99,6 @@ func (r *PostgresRepository) GetUserByID(id string) (*model.User, error) {
 
 	return &user, nil
 }
-
 
 func (r *PostgresRepository) GetOperatorIDByUserID(userID string) (string, error) {
 	var operatorID string

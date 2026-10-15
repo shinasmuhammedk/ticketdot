@@ -1,13 +1,17 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 
 	authmiddleware "ticketdot/internal/auth/middleware"
 	"ticketdot/internal/operator/model"
 	"ticketdot/internal/operator/service"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type OperatorHandler struct {
@@ -53,6 +57,8 @@ func (h *OperatorHandler) CreateBus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OperatorHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
+	operatorID, _ := r.Context().Value(authmiddleware.OperatorIDKey).(string)
+
 	var req model.CreateRouteRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -60,7 +66,7 @@ func (h *OperatorHandler) CreateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	route, err := h.service.CreateRoute(req)
+	route, err := h.service.CreateRoute(operatorID, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -150,15 +156,13 @@ func (h *OperatorHandler) GetBuses(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 func (h *OperatorHandler) GetRoutes(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
 
 	operatorID, ok := r.Context().
-		Value(authmiddleware.OperatorIDKey).
-		(string)
+		Value(authmiddleware.OperatorIDKey).(string)
 
 	if !ok {
 		http.Error(
@@ -193,15 +197,13 @@ func (h *OperatorHandler) GetRoutes(
 	})
 }
 
-
 func (h *OperatorHandler) GetSchedules(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
 
 	operatorID, ok := r.Context().
-		Value(authmiddleware.OperatorIDKey).
-		(string)
+		Value(authmiddleware.OperatorIDKey).(string)
 
 	if !ok {
 		http.Error(
@@ -233,5 +235,164 @@ func (h *OperatorHandler) GetSchedules(
 	json.NewEncoder(w).Encode(map[string]any{
 		"count": len(schedules),
 		"data":  schedules,
+	})
+}
+
+func (h *OperatorHandler) GetDashboardStats(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	operatorID, ok := r.Context().
+		Value(authmiddleware.OperatorIDKey).(string)
+
+	if !ok {
+		http.Error(
+			w,
+			"operator not found",
+			http.StatusUnauthorized,
+		)
+		return
+	}
+
+	stats, err := h.service.GetDashboardStats(
+		operatorID,
+	)
+
+	if err != nil {
+		http.Error(
+			w,
+			err.Error(),
+			http.StatusInternalServerError,
+		)
+		return
+	}
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	json.NewEncoder(w).Encode(
+		map[string]any{
+			"data": stats,
+		},
+	)
+}
+
+func (h *OperatorHandler) UpdateBus(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	busID := chi.URLParam(r, "busID")
+
+	operatorID, ok := r.Context().
+		Value(authmiddleware.OperatorIDKey).(string)
+
+	if !ok {
+		http.Error(
+			w,
+			"operator id not found",
+			http.StatusUnauthorized,
+		)
+		return
+	}
+
+	var req model.UpdateBusRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	err := h.service.UpdateBus(
+		busID,
+		operatorID,
+		&req,
+	)
+
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+
+			http.Error(
+				w,
+				"bus not found",
+				http.StatusNotFound,
+			)
+
+			return
+		}
+
+		http.Error(
+			w,
+			err.Error(),
+			http.StatusInternalServerError,
+		)
+
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Bus updated successfully",
+	})
+}
+
+func (h *OperatorHandler) DeleteBus(
+	w http.ResponseWriter,
+	r *http.Request,
+) {
+
+	busID := chi.URLParam(r, "busID")
+
+	operatorID, ok := r.Context().
+		Value(authmiddleware.OperatorIDKey).(string)
+
+	if !ok {
+		http.Error(
+			w,
+			"operator id not found",
+			http.StatusUnauthorized,
+		)
+		return
+	}
+
+	err := h.service.DeleteBus(
+		busID,
+		operatorID,
+	)
+
+	if err != nil {
+
+		if errors.Is(err, sql.ErrNoRows) {
+
+			http.Error(
+				w,
+				"bus not found",
+				http.StatusNotFound,
+			)
+
+			return
+		}
+
+		http.Error(
+			w,
+			err.Error(),
+			http.StatusInternalServerError,
+		)
+
+		return
+	}
+
+	w.Header().Set(
+		"Content-Type",
+		"application/json",
+	)
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Bus deleted successfully",
 	})
 }

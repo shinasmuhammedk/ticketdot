@@ -37,3 +37,17 @@ func (s *SearchService) SearchBuses(from, to, date string) ([]model.BusSearchRes
 
 	return s.repo.SearchBuses(from, to, date)
 }
+
+func (s *SearchService) GetScheduleDetails(scheduleID string) (*model.ScheduleDetailsResponse, error) {
+	scheduleID = strings.TrimSpace(scheduleID)
+	if scheduleID == "" {
+		return nil, errors.New("schedule id is required")
+	}
+
+	return s.repo.GetScheduleDetails(scheduleID)
+}
+
+func (s *SearchService) GetCities() ([]model.City, error) {
+	return s.repo.GetCities()
+}
+

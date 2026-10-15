@@ -5,10 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 
-    
-    
-    
 	"github.com/joho/godotenv"
 
 	authhandler "ticketdot/internal/auth/handler"
@@ -21,6 +19,7 @@ import (
 	bookingservice "ticketdot/internal/booking/service"
 
 	"ticketdot/internal/db"
+	"ticketdot/migrations"
 
 	operatorhandler "ticketdot/internal/operator/handler"
 	operatorrepository "ticketdot/internal/operator/repository"
@@ -35,11 +34,20 @@ import (
 	seathandler "ticketdot/internal/seat/handler"
 	seatrepository "ticketdot/internal/seat/repository"
 	seatservice "ticketdot/internal/seat/service"
+
+	profilehandler "ticketdot/internal/profile/handler"
+	profilerepository "ticketdot/internal/profile/repository"
+	profileservice "ticketdot/internal/profile/service"
 )
 
 func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found")
+	}
+
+	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if jwtSecret == "" {
+		log.Fatal("JWT_SECRET is not set")
 	}
 
 	databaseURL := os.Getenv("DATABASE_URL")
@@ -48,6 +56,10 @@ func main() {
 	}
 
 	database := db.Connect(databaseURL)
+
+	if err := migrations.Run(database); err != nil {
+		log.Fatalf("failed to run migrations: %v", err)
+	}
 
 	ctx := context.Background()
 	cleanup.StartExpiredLockCleaner(ctx, database)
@@ -72,12 +84,17 @@ func main() {
 	operatorService := operatorservice.NewOperatorService(operatorRepo)
 	operatorHandler := operatorhandler.NewOperatorHandler(operatorService)
 
+	profileRepo := profilerepository.NewPostgresRepository(database)
+	profileService := profileservice.NewProfileService(profileRepo)
+	profileHandler := profilehandler.NewProfileHandler(profileService)
+
 	router := routes.SetupRoutes(routes.Handlers{
 		Auth:     authHandler,
 		Search:   searchHandler,
 		Seat:     seatHandler,
 		Booking:  bookingHandler,
 		Operator: operatorHandler,
+		Profile:  profileHandler,
 	})
 
 	log.Println("Server running on :8080")

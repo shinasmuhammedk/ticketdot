@@ -1,10 +1,14 @@
 package handler
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"ticketdot/internal/search/service"
+
+	"github.com/go-chi/chi/v5"
 )
 
 type SearchHandler struct {
@@ -36,3 +40,37 @@ func (h *SearchHandler) SearchBuses(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+func (h *SearchHandler) GetScheduleDetails(w http.ResponseWriter, r *http.Request) {
+	scheduleID := chi.URLParam(r, "scheduleID")
+
+	schedule, err := h.service.GetScheduleDetails(scheduleID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "schedule not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"data": schedule,
+	})
+}
+
+func (h *SearchHandler) GetCities(w http.ResponseWriter, r *http.Request) {
+	cities, err := h.service.GetCities()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"count": len(cities),
+		"data":  cities,
+	})
+}
+

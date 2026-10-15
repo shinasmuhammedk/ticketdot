@@ -79,6 +79,35 @@ func (h *BookingHandler) ConfirmBooking(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+func (h *BookingHandler) ReleaseSeats(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req model.ReleaseSeatsRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.service.ReleaseSeats(userID, req)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"message": res.Message,
+		"data":    res,
+	})
+}
+
 func (h *BookingHandler) GetMyBookings(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
 	if !ok {
