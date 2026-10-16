@@ -65,6 +65,15 @@ func (s *BookingService) ConfirmBooking(
 	req.ScheduleID = strings.TrimSpace(req.ScheduleID)
 	seats := extractSeats(req.Seat, req.Seats)
 
+	// If seats are empty but passengers are provided, extract seat numbers from passengers
+	if len(seats) == 0 && len(req.Passengers) > 0 {
+		for _, p := range req.Passengers {
+			if seat := strings.TrimSpace(p.SeatNumber); seat != "" {
+				seats = append(seats, seat)
+			}
+		}
+	}
+
 	if userID == "" {
 		return nil, errors.New("user id is required")
 	}
@@ -77,8 +86,11 @@ func (s *BookingService) ConfirmBooking(
 		return nil, errors.New("at least one seat is required")
 	}
 
-	return s.repo.ConfirmBooking(userID, req.ScheduleID, seats)
+	req.Seats = seats
+
+	return s.repo.ConfirmBooking(userID, req)
 }
+
 
 func (s *BookingService) ReleaseSeats(
 	userID string,

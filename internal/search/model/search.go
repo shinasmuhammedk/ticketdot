@@ -11,6 +11,8 @@ type BusSearchResult struct {
 	ArrivalTime    time.Time `db:"arrival_time" json:"arrival_time"`
 	AvailableSeats int       `db:"available_seats" json:"available_seats"`
 	BaseFare       float64   `db:"base_fare" json:"base_fare"`
+	Rating         float64   `db:"rating" json:"rating"`
+	ReviewCount    int       `db:"review_count" json:"review_count"`
 }
 
 type ScheduleDetailsResponse struct {

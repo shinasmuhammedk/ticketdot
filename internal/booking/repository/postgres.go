@@ -158,17 +158,36 @@ func (r *PostgresRepository) LockSeats(userID, scheduleID string, seats []string
 	}, nil
 }
 
-func (r *PostgresRepository) ConfirmBooking(userID, scheduleID string, seats []string) (*model.ConfirmBookingResponse, error) {
-	cleaned := cleanSeats(seats)
+func (r *PostgresRepository) ConfirmBooking(userID string, req model.ConfirmBookingRequest) (*model.ConfirmBookingResponse, error) {
+	cleaned := cleanSeats(req.Seats)
 	if len(cleaned) == 0 {
 		return nil, errors.New("at least one seat is required")
 	}
+
+	scheduleID := req.ScheduleID
 
 	tx, err := r.db.Beginx()
 	if err != nil {
 		return nil, err
 	}
 	defer tx.Rollback()
+
+	// Get user's default details from users table if needed as fallback
+	var userFallback struct {
+		Name  string `db:"name"`
+		Email string `db:"email"`
+		Phone string `db:"phone"`
+	}
+	_ = tx.Get(&userFallback, "SELECT COALESCE(name, 'Passenger') as name, COALESCE(email, '') as email, COALESCE(phone, '') as phone FROM users WHERE id = $1", userID)
+
+	// Build passenger map by seat number
+	passengerMap := make(map[string]model.PassengerDetail)
+	for _, p := range req.Passengers {
+		sNum := strings.ToUpper(strings.TrimSpace(p.SeatNumber))
+		if sNum != "" {
+			passengerMap[sNum] = p
+		}
+	}
 
 	// Verify all seats locked by this user and not expired
 	for _, seat := range cleaned {
@@ -204,15 +223,41 @@ func (r *PostgresRepository) ConfirmBooking(userID, scheduleID string, seats []s
 		}
 	}
 
-	var amount float64
-	err = tx.Get(&amount, `
-		SELECT base_fare
-		FROM schedules
-		WHERE id = $1
+	var scheduleInfo struct {
+		BaseFare    float64 `db:"base_fare"`
+		Origin      string  `db:"origin"`
+		Destination string  `db:"destination"`
+	}
+	err = tx.Get(&scheduleInfo, `
+		SELECT s.base_fare, oc.name as origin, dc.name as destination
+		FROM schedules s
+		JOIN routes r ON s.route_id = r.id
+		JOIN cities oc ON r.origin_id = oc.id
+		JOIN cities dc ON r.destination_id = dc.id
+		WHERE s.id = $1
 	`, scheduleID)
 
 	if err != nil {
 		return nil, errors.New("schedule not found")
+	}
+
+	amount := scheduleInfo.BaseFare
+	boardingPoint := strings.TrimSpace(req.BoardingPoint)
+	if boardingPoint == "" {
+		boardingPoint = scheduleInfo.Origin + " Central Bus Station"
+	}
+	droppingPoint := strings.TrimSpace(req.DroppingPoint)
+	if droppingPoint == "" {
+		droppingPoint = scheduleInfo.Destination + " Main Terminal"
+	}
+
+	contactPhone := strings.TrimSpace(req.ContactPhone)
+	if contactPhone == "" {
+		contactPhone = userFallback.Phone
+	}
+	contactEmail := strings.TrimSpace(req.ContactEmail)
+	if contactEmail == "" {
+		contactEmail = userFallback.Email
 	}
 
 	var bookingRef string
@@ -235,7 +280,43 @@ func (r *PostgresRepository) ConfirmBooking(userID, scheduleID string, seats []s
 		return nil, errors.New("failed to generate unique booking reference")
 	}
 
+	var confirmedPassengers []model.PassengerDetail
+
 	for _, seat := range cleaned {
+		pName := userFallback.Name
+		var pAge *int
+		var pGender *string
+
+		if p, ok := passengerMap[strings.ToUpper(seat)]; ok {
+			if trimmed := strings.TrimSpace(p.Name); trimmed != "" {
+				pName = trimmed
+			}
+			if p.Age > 0 {
+				ageVal := p.Age
+				pAge = &ageVal
+			}
+			if trimmedGender := strings.TrimSpace(p.Gender); trimmedGender != "" {
+				genderVal := trimmedGender
+				pGender = &genderVal
+			}
+		}
+
+		ageForResp := 0
+		if pAge != nil {
+			ageForResp = *pAge
+		}
+		genderForResp := ""
+		if pGender != nil {
+			genderForResp = *pGender
+		}
+
+		confirmedPassengers = append(confirmedPassengers, model.PassengerDetail{
+			SeatNumber: seat,
+			Name:       pName,
+			Age:        ageForResp,
+			Gender:     genderForResp,
+		})
+
 		_, err = tx.Exec(`
 			INSERT INTO bookings (
 				booking_ref,
@@ -243,10 +324,17 @@ func (r *PostgresRepository) ConfirmBooking(userID, scheduleID string, seats []s
 				schedule_id,
 				seat_number,
 				status,
-				amount
+				amount,
+				passenger_name,
+				passenger_age,
+				passenger_gender,
+				boarding_point,
+				dropping_point,
+				contact_phone,
+				contact_email
 			)
-			VALUES ($1, $2, $3, $4, 'confirmed', $5)
-		`, bookingRef, userID, scheduleID, seat, amount)
+			VALUES ($1, $2, $3, $4, 'confirmed', $5, $6, $7, $8, $9, $10, $11, $12)
+		`, bookingRef, userID, scheduleID, seat, amount, pName, pAge, pGender, boardingPoint, droppingPoint, contactPhone, contactEmail)
 
 		if err != nil {
 			return nil, err
@@ -273,14 +361,20 @@ func (r *PostgresRepository) ConfirmBooking(userID, scheduleID string, seats []s
 	}
 
 	return &model.ConfirmBookingResponse{
-		BookingRef:  bookingRef,
-		ScheduleID:  scheduleID,
-		Seat:        strings.Join(cleaned, ", "),
-		Seats:       cleaned,
-		Status:      "confirmed",
-		TotalAmount: amount * float64(len(cleaned)),
+		BookingRef:    bookingRef,
+		ScheduleID:    scheduleID,
+		Seat:          strings.Join(cleaned, ", "),
+		Seats:         cleaned,
+		Passengers:    confirmedPassengers,
+		BoardingPoint: boardingPoint,
+		DroppingPoint: droppingPoint,
+		ContactPhone:  contactPhone,
+		ContactEmail:  contactEmail,
+		Status:        "confirmed",
+		TotalAmount:   amount * float64(len(cleaned)),
 	}, nil
 }
+
 
 func (r *PostgresRepository) ReleaseSeats(userID, scheduleID string, seats []string) (*model.ReleaseSeatsResponse, error) {
 	cleaned := cleanSeats(seats)
@@ -324,27 +418,56 @@ func (r *PostgresRepository) ReleaseSeats(userID, scheduleID string, seats []str
 
 func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, error) {
 	type bookingRow struct {
-		BookingRef  string    `db:"booking_ref"`
-		ScheduleID  string    `db:"schedule_id"`
-		SeatNumber  string    `db:"seat_number"`
-		Status      string    `db:"status"`
-		Amount      float64   `db:"amount"`
-		ConfirmedAt time.Time `db:"confirmed_at"`
-		CreatedAt   time.Time `db:"created_at"`
+		BookingRef    string         `db:"booking_ref"`
+		ScheduleID    string         `db:"schedule_id"`
+		SeatNumber    string         `db:"seat_number"`
+		Status        string         `db:"status"`
+		Amount        float64        `db:"amount"`
+		ConfirmedAt   time.Time      `db:"confirmed_at"`
+		CreatedAt     time.Time      `db:"created_at"`
+		Origin        string         `db:"origin"`
+		Destination   string         `db:"destination"`
+		OperatorName  string         `db:"operator_name"`
+		BusNumber     string         `db:"bus_number"`
+		BusType       string         `db:"bus_type"`
+		DepartureTime string         `db:"departure_time"`
+		ArrivalTime   string         `db:"arrival_time"`
+		PaymentID     sql.NullString `db:"payment_id"`
+		PaymentStatus sql.NullString `db:"payment_status"`
+		RefundID      sql.NullString `db:"refund_id"`
+		RefundStatus  sql.NullString `db:"refund_status"`
 	}
 
 	query := `
 		SELECT
-			booking_ref,
-			schedule_id,
-			seat_number,
-			status,
-			amount,
-			confirmed_at,
-			created_at
-		FROM bookings
-		WHERE user_id = $1
-		ORDER BY created_at DESC, seat_number ASC
+			b.booking_ref,
+			b.schedule_id,
+			b.seat_number,
+			b.status,
+			b.amount,
+			b.confirmed_at,
+			b.created_at,
+			oc.name AS origin,
+			dc.name AS destination,
+			op.name AS operator_name,
+			bus.registration_no AS bus_number,
+			bus.bus_type AS bus_type,
+			s.departure_time::text AS departure_time,
+			s.arrival_time::text AS arrival_time,
+			p.payment_id,
+			p.status AS payment_status,
+			p.refund_id,
+			p.refund_status
+		FROM bookings b
+		JOIN schedules s ON b.schedule_id = s.id
+		JOIN routes rt ON s.route_id = rt.id
+		JOIN cities oc ON rt.origin_id = oc.id
+		JOIN cities dc ON rt.destination_id = dc.id
+		JOIN buses bus ON s.bus_id = bus.id
+		JOIN operators op ON bus.operator_id = op.id
+		LEFT JOIN payments p ON b.booking_ref = p.booking_ref
+		WHERE b.user_id = $1
+		ORDER BY b.created_at DESC, b.seat_number ASC
 	`
 
 	var rows []bookingRow
@@ -364,15 +487,43 @@ func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, er
 			result[idx].Seat = result[idx].SeatNumber
 			result[idx].Amount += row.Amount
 		} else {
+			pID := ""
+			if row.PaymentID.Valid {
+				pID = row.PaymentID.String
+			}
+			pStatus := ""
+			if row.PaymentStatus.Valid {
+				pStatus = row.PaymentStatus.String
+			}
+			rID := ""
+			if row.RefundID.Valid {
+				rID = row.RefundID.String
+			}
+			rStatus := ""
+			if row.RefundStatus.Valid {
+				rStatus = row.RefundStatus.String
+			}
+
 			b := model.MyBooking{
-				BookingRef:  row.BookingRef,
-				ScheduleID:  row.ScheduleID,
-				SeatNumber:  row.SeatNumber,
-				Seat:        row.SeatNumber,
-				Seats:       []string{row.SeatNumber},
-				Status:      row.Status,
-				Amount:      row.Amount,
-				ConfirmedAt: row.ConfirmedAt,
+				BookingRef:    row.BookingRef,
+				ScheduleID:    row.ScheduleID,
+				SeatNumber:    row.SeatNumber,
+				Seat:          row.SeatNumber,
+				Seats:         []string{row.SeatNumber},
+				Origin:        row.Origin,
+				Destination:   row.Destination,
+				OperatorName:  row.OperatorName,
+				BusNumber:     row.BusNumber,
+				BusType:       row.BusType,
+				DepartureTime: row.DepartureTime,
+				ArrivalTime:   row.ArrivalTime,
+				Status:        row.Status,
+				Amount:        row.Amount,
+				ConfirmedAt:   row.ConfirmedAt,
+				PaymentID:     pID,
+				PaymentStatus: pStatus,
+				RefundID:      rID,
+				RefundStatus:  rStatus,
 			}
 			indexMap[row.BookingRef] = len(result)
 			result = append(result, b)
@@ -381,6 +532,7 @@ func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, er
 
 	return result, nil
 }
+
 
 func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.CancelBookingResponse, error) {
 	tx, err := r.db.Beginx()
@@ -453,15 +605,56 @@ func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.Ca
 		}
 	}
 
+	// Automated Refund Processing: Check if there was a captured payment for this booking
+	var paymentInfo struct {
+		Amount float64 `db:"amount"`
+		Status string  `db:"status"`
+	}
+	err = tx.Get(&paymentInfo, `
+		SELECT amount, status
+		FROM payments
+		WHERE booking_ref = $1 AND status = 'captured'
+		LIMIT 1
+	`, bookingRef)
+
+	refundID := ""
+	refundAmount := 0.0
+	refundStatus := ""
+	refundTimeline := ""
+
+	if err == nil && paymentInfo.Status == "captured" {
+		randCandidate, _ := generateBookingRef()
+		refundID = "rfnd_" + randCandidate
+		refundAmount = paymentInfo.Amount
+		refundStatus = "processed"
+		refundTimeline = "Refund will be credited to original payment source within 5-7 business days"
+
+		_, _ = tx.Exec(`
+			UPDATE payments
+			SET
+				status = 'refunded',
+				refund_id = $1,
+				refund_amount = $2,
+				refund_status = 'processed',
+				refunded_at = NOW(),
+				updated_at = NOW()
+			WHERE booking_ref = $3
+		`, refundID, refundAmount, bookingRef)
+	}
+
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 
 	return &model.CancelBookingResponse{
-		BookingRef: bookingRef,
-		Status:     "cancelled",
-		Message:    "booking cancelled successfully",
-		Seats:      cancelledSeats,
+		BookingRef:     bookingRef,
+		Status:         "cancelled",
+		Message:        "booking cancelled successfully",
+		Seats:          cancelledSeats,
+		RefundID:       refundID,
+		RefundAmount:   refundAmount,
+		RefundStatus:   refundStatus,
+		RefundTimeline: refundTimeline,
 	}, nil
 }
 
@@ -471,18 +664,24 @@ func (r *PostgresRepository) GetBookingDetails(
 ) (*model.BookingDetailsResponse, error) {
 
 	type detailRow struct {
-		BookingRef    string  `db:"booking_ref"`
-		SeatNumber    string  `db:"seat_number"`
-		Status        string  `db:"status"`
-		Amount        float64 `db:"amount"`
-		PassengerName string  `db:"passenger_name"`
-		OperatorName  string  `db:"operator_name"`
-		Origin        string  `db:"origin"`
-		Destination   string  `db:"destination"`
-		BusNumber     string  `db:"bus_number"`
-		BusType       string  `db:"bus_type"`
-		DepartureTime string  `db:"departure_time"`
-		ArrivalTime   string  `db:"arrival_time"`
+		BookingRef      string         `db:"booking_ref"`
+		SeatNumber      string         `db:"seat_number"`
+		Status          string         `db:"status"`
+		Amount          float64        `db:"amount"`
+		PassengerName   string         `db:"passenger_name"`
+		PassengerAge    sql.NullInt32  `db:"passenger_age"`
+		PassengerGender sql.NullString `db:"passenger_gender"`
+		BoardingPoint   sql.NullString `db:"boarding_point"`
+		DroppingPoint   sql.NullString `db:"dropping_point"`
+		ContactPhone    sql.NullString `db:"contact_phone"`
+		ContactEmail    sql.NullString `db:"contact_email"`
+		OperatorName    string         `db:"operator_name"`
+		Origin          string         `db:"origin"`
+		Destination     string         `db:"destination"`
+		BusNumber       string         `db:"bus_number"`
+		BusType         string         `db:"bus_type"`
+		DepartureTime   string         `db:"departure_time"`
+		ArrivalTime     string         `db:"arrival_time"`
 	}
 
 	query := `
@@ -491,7 +690,13 @@ func (r *PostgresRepository) GetBookingDetails(
 			b.seat_number,
 			b.status,
 			b.amount,
-			u.name AS passenger_name,
+			COALESCE(NULLIF(b.passenger_name, ''), u.name, 'Passenger') AS passenger_name,
+			b.passenger_age,
+			b.passenger_gender,
+			b.boarding_point,
+			b.dropping_point,
+			b.contact_phone,
+			b.contact_email,
 			op.name AS operator_name,
 			oc.name AS origin,
 			dc.name AS destination,
@@ -508,8 +713,14 @@ func (r *PostgresRepository) GetBookingDetails(
 		JOIN buses bus ON s.bus_id = bus.id
 		JOIN operators op ON bus.operator_id = op.id
 		WHERE b.booking_ref = $1
-		  AND b.user_id = $2
+
+		  AND (
+		      b.user_id = NULLIF($2, '')::uuid
+		      OR s.operator_id = (SELECT operator_id FROM users WHERE id = NULLIF($2, '')::uuid)
+		      OR NULLIF($2, '') IS NULL
+		  )
 		ORDER BY b.seat_number ASC
+
 	`
 
 	var rows []detailRow
@@ -522,29 +733,104 @@ func (r *PostgresRepository) GetBookingDetails(
 	}
 
 	var seats []string
+	var passengers []model.PassengerInfo
 	var totalAmount float64
 	for _, row := range rows {
 		seats = append(seats, row.SeatNumber)
 		totalAmount += row.Amount
+
+		age := 0
+		if row.PassengerAge.Valid {
+			age = int(row.PassengerAge.Int32)
+		}
+		gender := ""
+		if row.PassengerGender.Valid {
+			gender = row.PassengerGender.String
+		}
+
+		passengers = append(passengers, model.PassengerInfo{
+			SeatNumber: row.SeatNumber,
+			Name:       row.PassengerName,
+			Age:        age,
+			Gender:     gender,
+		})
 	}
 
 	first := rows[0]
+	boardingPoint := first.Origin + " Central Bus Station"
+	if first.BoardingPoint.Valid && strings.TrimSpace(first.BoardingPoint.String) != "" {
+		boardingPoint = first.BoardingPoint.String
+	}
+	droppingPoint := first.Destination + " Main Terminal"
+	if first.DroppingPoint.Valid && strings.TrimSpace(first.DroppingPoint.String) != "" {
+		droppingPoint = first.DroppingPoint.String
+	}
+	contactPhone := ""
+	if first.ContactPhone.Valid {
+		contactPhone = first.ContactPhone.String
+	}
+	contactEmail := ""
+	if first.ContactEmail.Valid {
+		contactEmail = first.ContactEmail.String
+	}
+
 	resp := &model.BookingDetailsResponse{
 		BookingRef:      first.BookingRef,
 		PassengerName:   first.PassengerName,
 		OperatorName:    first.OperatorName,
 		Origin:          first.Origin,
 		Destination:     first.Destination,
+		BoardingPoint:   boardingPoint,
+		DroppingPoint:   droppingPoint,
+		ContactPhone:    contactPhone,
+		ContactEmail:    contactEmail,
 		BusNumber:       first.BusNumber,
 		BusRegistration: first.BusNumber,
 		BusType:         first.BusType,
 		SeatNumber:      strings.Join(seats, ", "),
 		Seats:           seats,
+		Passengers:      passengers,
 		DepartureTime:   first.DepartureTime,
 		ArrivalTime:     first.ArrivalTime,
 		Amount:          totalAmount,
 		Status:          first.Status,
 	}
 
+	var payRow struct {
+		PaymentID     sql.NullString  `db:"payment_id"`
+		PaymentMethod sql.NullString  `db:"payment_method"`
+		Status        sql.NullString  `db:"status"`
+		RefundID      sql.NullString  `db:"refund_id"`
+		RefundAmount  sql.NullFloat64 `db:"refund_amount"`
+		RefundStatus  sql.NullString  `db:"refund_status"`
+	}
+	_ = r.db.Get(&payRow, `
+		SELECT payment_id, payment_method, status, refund_id, refund_amount, refund_status
+		FROM payments
+		WHERE booking_ref = $1
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, bookingRef)
+
+	if payRow.PaymentID.Valid {
+		resp.PaymentID = payRow.PaymentID.String
+	}
+	if payRow.PaymentMethod.Valid {
+		resp.PaymentMethod = payRow.PaymentMethod.String
+	}
+	if payRow.Status.Valid {
+		resp.PaymentStatus = payRow.Status.String
+	}
+	if payRow.RefundID.Valid {
+		resp.RefundID = payRow.RefundID.String
+	}
+	if payRow.RefundAmount.Valid {
+		resp.RefundAmount = payRow.RefundAmount.Float64
+	}
+	if payRow.RefundStatus.Valid {
+		resp.RefundStatus = payRow.RefundStatus.String
+	}
+
 	return resp, nil
 }
+

@@ -5,7 +5,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -19,6 +22,7 @@ import (
 	bookingservice "ticketdot/internal/booking/service"
 
 	"ticketdot/internal/db"
+	"ticketdot/internal/health"
 	"ticketdot/migrations"
 
 	operatorhandler "ticketdot/internal/operator/handler"
@@ -38,6 +42,21 @@ import (
 	profilehandler "ticketdot/internal/profile/handler"
 	profilerepository "ticketdot/internal/profile/repository"
 	profileservice "ticketdot/internal/profile/service"
+	"ticketdot/internal/schedule/lifecycle"
+
+	paymenthandler "ticketdot/internal/payment/handler"
+	paymentrepository "ticketdot/internal/payment/repository"
+	paymentservice "ticketdot/internal/payment/service"
+
+	trackinghandler "ticketdot/internal/tracking/handler"
+	trackingrepository "ticketdot/internal/tracking/repository"
+	trackingservice "ticketdot/internal/tracking/service"
+
+	reviewhandler "ticketdot/internal/review/handler"
+	reviewrepository "ticketdot/internal/review/repository"
+	reviewservice "ticketdot/internal/review/service"
+
+	"ticketdot/internal/notification"
 )
 
 func main() {
@@ -55,14 +74,24 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "8080"
+	}
+
 	database := db.Connect(databaseURL)
 
 	if err := migrations.Run(database); err != nil {
 		log.Fatalf("failed to run migrations: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	cleanup.StartExpiredLockCleaner(ctx, database)
+	lifecycle.StartScheduleLifecycleWorker(ctx, database, 30*time.Second)
+
+	healthHandler := health.NewHealthHandler(database)
 
 	authRepo := authrepository.NewPostgresRepository(database)
 	authService := authservice.NewAuthService(authRepo)
@@ -76,9 +105,11 @@ func main() {
 	seatService := seatservice.NewSeatService(seatRepo)
 	seatHandler := seathandler.NewSeatHandler(seatService)
 
+	emailService := notification.NewEmailService()
+
 	bookingRepo := bookingrepository.NewPostgresRepository(database)
 	bookingService := bookingservice.NewBookingService(bookingRepo)
-	bookingHandler := bookinghandler.NewBookingHandler(bookingService)
+	bookingHandler := bookinghandler.NewBookingHandler(bookingService, emailService)
 
 	operatorRepo := operatorrepository.NewPostgresRepository(database)
 	operatorService := operatorservice.NewOperatorService(operatorRepo)
@@ -88,18 +119,62 @@ func main() {
 	profileService := profileservice.NewProfileService(profileRepo)
 	profileHandler := profilehandler.NewProfileHandler(profileService)
 
+	paymentRepo := paymentrepository.NewPostgresRepository(database)
+	paymentService := paymentservice.NewPaymentService(paymentRepo)
+	paymentHandler := paymenthandler.NewPaymentHandler(paymentService, emailService)
+
+	trackingRepo := trackingrepository.NewPostgresTrackingRepository(database)
+	trackingService := trackingservice.NewTrackingService(trackingRepo)
+	trackingHandler := trackinghandler.NewTrackingHandler(trackingService)
+
+	reviewRepo := reviewrepository.NewPostgresReviewRepository(database)
+	reviewService := reviewservice.NewReviewService(reviewRepo)
+	reviewHandler := reviewhandler.NewReviewHandler(reviewService)
+
 	router := routes.SetupRoutes(routes.Handlers{
+		Health:   healthHandler,
 		Auth:     authHandler,
 		Search:   searchHandler,
 		Seat:     seatHandler,
 		Booking:  bookingHandler,
 		Operator: operatorHandler,
 		Profile:  profileHandler,
+		Payment:  paymentHandler,
+		Tracking: trackingHandler,
+		Review:   reviewHandler,
 	})
 
-	log.Println("Server running on :8080")
-
-	if err := http.ListenAndServe(":8080", router); err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:         ":" + port,
+		Handler:      router,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	// Run HTTP listener in goroutine
+	go func() {
+		log.Printf("Server running on :%s", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Wait for interrupt signal for graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutting down server gracefully...")
+	cancel() // Cancel background lock cleaner
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Server exited cleanly")
 }
+

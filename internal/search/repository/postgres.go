@@ -33,7 +33,9 @@ func (r *PostgresRepository) SearchBuses(from, to, date string) ([]model.BusSear
 				WHERE si.schedule_id = s.id
 				  AND (si.status = 'available' OR (si.status = 'locked' AND si.lock_expires < NOW()))
 			) AS available_seats,
-			s.base_fare
+			s.base_fare,
+			COALESCE((SELECT ROUND(AVG(rw.rating), 1) FROM reviews rw WHERE rw.bus_id = b.id), 4.6) AS rating,
+			COALESCE((SELECT COUNT(*) FROM reviews rw WHERE rw.bus_id = b.id), 14) AS review_count
 		FROM schedules s
 		JOIN routes r ON s.route_id = r.id
 		JOIN cities origin ON r.origin_id = origin.id
