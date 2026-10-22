@@ -32,14 +32,16 @@ type BookingDetailsResponse struct {
 	DepartureTime string `db:"departure_time" json:"departure_time"`
 	ArrivalTime   string `db:"arrival_time" json:"arrival_time"`
 
-	Amount float64 `db:"amount" json:"amount"`
-	Status string  `db:"status" json:"status"`
+	Amount      int64  `db:"amount" json:"amount"`             // Amount in paise
+	AmountPaise int64  `db:"-" json:"amount_paise"`           // Explicit paise field
+	Status      string `db:"status" json:"status"`
 
 	// Payment & Refund tracking
-	PaymentID     string  `json:"payment_id,omitempty"`
-	PaymentMethod string  `json:"payment_method,omitempty"`
-	PaymentStatus string  `json:"payment_status,omitempty"`
-	RefundID      string  `json:"refund_id,omitempty"`
-	RefundAmount  float64 `json:"refund_amount,omitempty"`
-	RefundStatus  string  `json:"refund_status,omitempty"`
+	PaymentID         string `json:"payment_id,omitempty"`
+	PaymentMethod     string `json:"payment_method,omitempty"`
+	PaymentStatus     string `json:"payment_status,omitempty"`
+	RefundID          string `json:"refund_id,omitempty"`
+	RefundAmount      int64  `json:"refund_amount,omitempty"`       // Refund in paise
+	RefundAmountPaise int64  `json:"refund_amount_paise,omitempty"` // Explicit paise field
+	RefundStatus      string `json:"refund_status,omitempty"`
 }

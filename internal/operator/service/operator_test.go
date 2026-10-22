@@ -11,7 +11,7 @@ import (
 type mockOperatorRepo struct {
 	createBusFn        func(operatorID string, req model.CreateBusRequest) (*model.CreateBusResponse, error)
 	createRouteFn      func(operatorID string, req model.CreateRouteRequest) (*model.CreateRouteResponse, error)
-	createScheduleFn   func(operatorID string, req model.CreateScheduleRequest) (*model.CreateScheduleResponse, error)
+	createScheduleFn   func(operatorID string, req model.CreateScheduleRequest, farePaise int64) (*model.CreateScheduleResponse, error)
 	getBookingsFn      func(operatorID string) ([]model.OperatorBooking, error)
 	getBusesFn         func(operatorID string) ([]model.CreateBusResponse, error)
 	getRoutesFn        func(operatorID string) ([]model.RouteResponse, error)
@@ -38,11 +38,11 @@ func (m *mockOperatorRepo) CreateRoute(operatorID string, req model.CreateRouteR
 	return &model.CreateRouteResponse{ID: "route-1", OriginCityID: req.OriginCityID, DestinationCityID: req.DestinationCityID}, nil
 }
 
-func (m *mockOperatorRepo) CreateSchedule(operatorID string, req model.CreateScheduleRequest) (*model.CreateScheduleResponse, error) {
+func (m *mockOperatorRepo) CreateSchedule(operatorID string, req model.CreateScheduleRequest, farePaise int64) (*model.CreateScheduleResponse, error) {
 	if m.createScheduleFn != nil {
-		return m.createScheduleFn(operatorID, req)
+		return m.createScheduleFn(operatorID, req, farePaise)
 	}
-	return &model.CreateScheduleResponse{ID: "sched-1", RouteID: req.RouteID, BusID: req.BusID, BaseFare: req.BaseFare}, nil
+	return &model.CreateScheduleResponse{ID: "sched-1", RouteID: req.RouteID, BusID: req.BusID, BaseFare: farePaise, BaseFarePaise: farePaise}, nil
 }
 
 func (m *mockOperatorRepo) GetBookings(operatorID string) ([]model.OperatorBooking, error) {
@@ -298,7 +298,7 @@ func TestGetAnalytics_Validation(t *testing.T) {
 		t.Fatalf("expected successful analytics call, got %v", err)
 	}
 	if res.TotalRevenue != 15000 {
-		t.Errorf("expected 15000 revenue, got %f", res.TotalRevenue)
+		t.Errorf("expected 15000 revenue, got %d", res.TotalRevenue)
 	}
 
 	// Empty operator id

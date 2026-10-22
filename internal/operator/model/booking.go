@@ -16,6 +16,7 @@ type OperatorBooking struct {
 	BusNumber        string    `db:"bus_number" json:"bus_number"`
 	SeatNumber       string    `db:"seat_number" json:"seat_number"`
 	Status           string    `db:"status" json:"status"`
-	Amount           float64   `db:"amount" json:"amount"`
+	Amount           int64     `db:"amount" json:"amount"`             // Amount in paise
+	AmountPaise      int64     `db:"-" json:"amount_paise"`           // Explicit paise field
 	ConfirmedAt      time.Time `db:"confirmed_at" json:"confirmed_at"`
 }

@@ -10,7 +10,8 @@ type BusSearchResult struct {
 	DepartureTime  time.Time `db:"departure_time" json:"departure_time"`
 	ArrivalTime    time.Time `db:"arrival_time" json:"arrival_time"`
 	AvailableSeats int       `db:"available_seats" json:"available_seats"`
-	BaseFare       float64   `db:"base_fare" json:"base_fare"`
+	BaseFare       int64     `db:"base_fare" json:"base_fare"`       // Fare in paise
+	BaseFarePaise  int64     `db:"-" json:"base_fare_paise"`         // Explicit paise field
 	Rating         float64   `db:"rating" json:"rating"`
 	ReviewCount    int       `db:"review_count" json:"review_count"`
 }
@@ -24,8 +25,10 @@ type ScheduleDetailsResponse struct {
 	BusType       string    `db:"bus_type" json:"bus_type"`
 	DepartureTime time.Time `db:"departure_time" json:"departure_time"`
 	ArrivalTime   time.Time `db:"arrival_time" json:"arrival_time"`
-	BaseFare      float64   `db:"base_fare" json:"base_fare"`
+	BaseFare      int64     `db:"base_fare" json:"base_fare"`       // Fare in paise
+	BaseFarePaise int64     `db:"-" json:"base_fare_paise"`         // Explicit paise field
 }
+
 type City struct {
 	ID    string `db:"id" json:"id"`
 	Name  string `db:"name" json:"name"`

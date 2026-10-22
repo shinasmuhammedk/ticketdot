@@ -1,6 +1,8 @@
 package repository
 
 import (
+	"context"
+
 	"github.com/jmoiron/sqlx"
 
 	"ticketdot/internal/auth/model"
@@ -192,5 +194,117 @@ func (r *PostgresRepository) UpdateUserPassword(userID string, passwordHash stri
 	`
 	_, err := r.db.Exec(query, passwordHash, userID)
 	return err
+}
+
+const refreshTokenCleanupLockID = 982347128934
+
+func (r *PostgresRepository) CreateRefreshToken(token *model.RefreshToken) error {
+	query := `
+		INSERT INTO refresh_tokens (
+			user_id,
+			family_id,
+			token_hash,
+			expires_at,
+			revoked_at
+		) VALUES (
+			$1, $2, $3, $4, $5
+		)
+		RETURNING id, created_at
+	`
+	return r.db.QueryRow(query, token.UserID, token.FamilyID, token.TokenHash, token.ExpiresAt, token.RevokedAt).Scan(&token.ID, &token.CreatedAt)
+}
+
+func (r *PostgresRepository) GetRefreshToken(tokenHash string) (*model.RefreshToken, error) {
+	query := `
+		SELECT id, user_id, family_id, token_hash, expires_at, revoked_at, created_at
+		FROM refresh_tokens
+		WHERE token_hash = $1
+	`
+	var t model.RefreshToken
+	err := r.db.Get(&t, query, tokenHash)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *PostgresRepository) RotateRefreshToken(tokenHash string) (*model.RefreshToken, error) {
+	query := `
+		UPDATE refresh_tokens
+		SET revoked_at = NOW()
+		WHERE token_hash = $1
+		  AND revoked_at IS NULL
+		  AND expires_at > NOW()
+		RETURNING id, user_id, family_id, token_hash, expires_at, revoked_at, created_at
+	`
+	var t model.RefreshToken
+	err := r.db.Get(&t, query, tokenHash)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *PostgresRepository) RevokeFamily(familyID string) error {
+	query := `
+		UPDATE refresh_tokens
+		SET revoked_at = NOW()
+		WHERE family_id = $1
+		  AND revoked_at IS NULL
+	`
+	_, err := r.db.Exec(query, familyID)
+	return err
+}
+
+func (r *PostgresRepository) RevokeRefreshToken(tokenHash string) error {
+	query := `
+		UPDATE refresh_tokens
+		SET revoked_at = NOW()
+		WHERE token_hash = $1
+		  AND revoked_at IS NULL
+	`
+	_, err := r.db.Exec(query, tokenHash)
+	return err
+}
+
+func (r *PostgresRepository) RevokeUserRefreshTokens(userID string) error {
+	query := `
+		UPDATE refresh_tokens
+		SET revoked_at = NOW()
+		WHERE user_id = $1
+		  AND revoked_at IS NULL
+	`
+	_, err := r.db.Exec(query, userID)
+	return err
+}
+
+func (r *PostgresRepository) DeleteExpiredRefreshTokens(ctx context.Context) (int64, error) {
+	tx, err := r.db.BeginTxx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var acquired bool
+	if err := tx.GetContext(ctx, &acquired, "SELECT pg_try_advisory_xact_lock($1)", refreshTokenCleanupLockID); err != nil {
+		return 0, err
+	}
+	if !acquired {
+		return 0, nil
+	}
+
+	res, err := tx.ExecContext(ctx, `
+		DELETE FROM refresh_tokens
+		WHERE expires_at < NOW() - INTERVAL '7 days'
+	`)
+	if err != nil {
+		return 0, err
+	}
+
+	count, _ := res.RowsAffected()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 

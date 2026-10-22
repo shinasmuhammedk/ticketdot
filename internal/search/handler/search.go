@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 
+	"ticketdot/internal/httpx"
 	"ticketdot/internal/search/service"
 
 	"github.com/go-chi/chi/v5"
@@ -28,7 +29,7 @@ func (h *SearchHandler) SearchBuses(w http.ResponseWriter, r *http.Request) {
 
 	buses, err := h.service.SearchBuses(from, to, date)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -47,10 +48,10 @@ func (h *SearchHandler) GetScheduleDetails(w http.ResponseWriter, r *http.Reques
 	schedule, err := h.service.GetScheduleDetails(scheduleID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "schedule not found", http.StatusNotFound)
+			httpx.WriteError(w, r, httpx.NotFound("schedule not found"))
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpx.WriteError(w, r, httpx.Internal(err))
 		return
 	}
 
@@ -63,7 +64,7 @@ func (h *SearchHandler) GetScheduleDetails(w http.ResponseWriter, r *http.Reques
 func (h *SearchHandler) GetCities(w http.ResponseWriter, r *http.Request) {
 	cities, err := h.service.GetCities()
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpx.WriteError(w, r, httpx.Internal(err))
 		return
 	}
 
@@ -73,4 +74,3 @@ func (h *SearchHandler) GetCities(w http.ResponseWriter, r *http.Request) {
 		"data":  cities,
 	})
 }
-

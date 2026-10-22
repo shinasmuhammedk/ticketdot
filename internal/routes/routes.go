@@ -2,6 +2,7 @@ package routes
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -9,18 +10,20 @@ import (
 	authhandler "ticketdot/internal/auth/handler"
 	authmiddleware "ticketdot/internal/auth/middleware"
 	bookinghandler "ticketdot/internal/booking/handler"
+	"ticketdot/internal/config"
 	healthhandler "ticketdot/internal/health"
 	httpmiddleware "ticketdot/internal/http/middleware"
 	operatorhandler "ticketdot/internal/operator/handler"
 	paymenthandler "ticketdot/internal/payment/handler"
 	profilehandler "ticketdot/internal/profile/handler"
+	reviewhandler "ticketdot/internal/review/handler"
 	searchhandler "ticketdot/internal/search/handler"
 	seathandler "ticketdot/internal/seat/handler"
 	trackinghandler "ticketdot/internal/tracking/handler"
-	reviewhandler "ticketdot/internal/review/handler"
 )
 
 type Handlers struct {
+	Config   *config.Config
 	Health   *healthhandler.HealthHandler
 	Auth     *authhandler.AuthHandler
 	Search   *searchhandler.SearchHandler
@@ -38,16 +41,38 @@ func SetupRoutes(h Handlers) http.Handler {
 
 	// Production resilience & observability middlewares
 	r.Use(chimiddleware.RequestID)
-	r.Use(chimiddleware.RealIP)
+	if h.Config != nil && h.Config.TrustProxy {
+		r.Use(chimiddleware.RealIP)
+	}
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(httpmiddleware.CORS)
+
+	// Baseline security headers
+	r.Use(httpmiddleware.SecurityHeaders)
+
+	// Request limits, rate limiting & CORS
+	if h.Config != nil {
+		r.Use(httpmiddleware.RequestSizeLimiter(h.Config.MaxBodyBytes))
+		rl := httpmiddleware.NewRateLimiter(h.Config.LoginRateLimit, h.Config.SignupRateLimit, h.Config.ForgotPasswordRateLimit, h.Config.GlobalRateLimit, h.Config.TrustProxy)
+		if h.Config.WebhookRateLimit > 0 {
+			rl.SetWebhookRateLimit(h.Config.WebhookRateLimit)
+		}
+		r.Use(rl.Handler)
+		r.Use(httpmiddleware.NewCORSMiddleware(h.Config.AllowedOrigins))
+	} else {
+		r.Use(httpmiddleware.RequestSizeLimiter(1048576))
+		r.Use(httpmiddleware.NewRateLimiter(10, 10, 5, 120, false).Handler)
+		r.Use(httpmiddleware.CORS)
+	}
 
 	// Liveness & readiness probe
 	r.Get("/health", h.Health.Check)
 
+	// Authentication Endpoints
 	r.Post("/auth/signup", h.Auth.Signup)
 	r.Post("/auth/login", h.Auth.Login)
+	r.Post("/auth/refresh", h.Auth.Refresh)
+	r.Post("/auth/logout", h.Auth.Logout)
 	r.Post("/auth/forgot-password", h.Auth.ForgotPassword)
 	r.Post("/auth/reset-password", h.Auth.ResetPassword)
 
@@ -56,13 +81,16 @@ func SetupRoutes(h Handlers) http.Handler {
 	r.Get("/buses/{scheduleID}/seats", h.Seat.GetSeats)
 	r.Get("/cities", h.Search.GetCities)
 
-	// Payment Gateway Webhook & Test Signature helper
+	// Payment Gateway Webhook & Test Signature helper (development only)
 	r.Post("/payments/webhook", h.Payment.HandleWebhook)
-	r.Post("/payments/test-signature", h.Payment.GenerateTestSignature)
+	if h.Config != nil && h.Config.IsDevelopment() {
+		r.Post("/payments/test-signature", h.Payment.GenerateTestSignature)
+	} else {
+		r.HandleFunc("/payments/test-signature", http.NotFound)
+	}
 
-	// Live Bus Tracking & Trip Telemetry
+	// Live Bus Tracking Telemetry (Public)
 	r.Get("/trips/{identifier}/tracking", h.Tracking.GetTracking)
-	r.Post("/trips/{scheduleID}/simulate", h.Tracking.SimulateTrip)
 
 	// Bus Reviews & Passenger Ratings
 	r.Get("/buses/{busID}/reviews", h.Review.GetBusReviews)
@@ -91,8 +119,13 @@ func SetupRoutes(h Handlers) http.Handler {
 		r.Post("/bookings/{bookingRef}/cancel", h.Booking.CancelBooking)
 
 		// Payment Gateway Endpoints
+		verifyRateLimit := 10
+		if h.Config != nil && h.Config.PaymentVerifyRateLimit > 0 {
+			verifyRateLimit = h.Config.PaymentVerifyRateLimit
+		}
+
 		r.Post("/payments/orders", h.Payment.CreateOrder)
-		r.Post("/payments/verify", h.Payment.VerifyPayment)
+		r.With(httpmiddleware.NewUserRateLimiter(verifyRateLimit, time.Minute)).Post("/payments/verify", h.Payment.VerifyPayment)
 		r.Get("/payments/{orderID}", h.Payment.GetPaymentStatus)
 	})
 
@@ -114,6 +147,7 @@ func SetupRoutes(h Handlers) http.Handler {
 		r.Post("/operator/schedules", h.Operator.CreateSchedule)
 		r.Post("/operator/schedules/{scheduleID}/cancel", h.Operator.CancelSchedule)
 		r.Post("/operator/trips/{scheduleID}/location", h.Tracking.UpdateLocation)
+		r.Post("/trips/{scheduleID}/simulate", h.Tracking.SimulateTrip)
 		r.Get("/operator/bookings", h.Operator.GetBookings)
 
 		r.Get("/operator/buses", h.Operator.GetBuses)

@@ -38,10 +38,10 @@ func TestTokenGenerationAndValidation(t *testing.T) {
 		t.Fatalf("exp claim missing or not float64")
 	}
 
-	// Verify expiration is ~24 hours from now (allow 5-minute tolerance)
-	expectedExp := time.Now().Add(24 * time.Hour).Unix()
-	if int64(expFloat) < expectedExp-300 || int64(expFloat) > expectedExp+300 {
-		t.Errorf("expected exp around %d (24h), got %d", expectedExp, int64(expFloat))
+	// Verify expiration is ~15 minutes from now (allow 1-minute tolerance)
+	expectedExp := time.Now().Add(15 * time.Minute).Unix()
+	if int64(expFloat) < expectedExp-60 || int64(expFloat) > expectedExp+60 {
+		t.Errorf("expected exp around %d (15m), got %d", expectedExp, int64(expFloat))
 	}
 }
 

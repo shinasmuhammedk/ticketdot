@@ -161,7 +161,7 @@ func (s *TrackingService) UpdateLocation(ctx context.Context, scheduleID string,
 		return fmt.Errorf("schedule not found: %w", err)
 	}
 
-	if operatorID != "" && info.OperatorID != operatorID {
+	if operatorID == "" || info.OperatorID != operatorID {
 		return errors.New("unauthorized: operator does not own this schedule")
 	}
 
@@ -190,7 +190,7 @@ func (s *TrackingService) SimulateTrip(ctx context.Context, scheduleID string, o
 		return nil, fmt.Errorf("schedule not found: %w", err)
 	}
 
-	if operatorID != "" && info.OperatorID != operatorID {
+	if operatorID == "" || info.OperatorID != operatorID {
 		return nil, errors.New("unauthorized: operator does not own this schedule")
 	}
 

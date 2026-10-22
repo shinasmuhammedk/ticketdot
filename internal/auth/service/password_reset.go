@@ -64,8 +64,8 @@ func (s *AuthService) ResetPassword(req ResetPasswordRequest) error {
 		return errors.New("reset token is required")
 	}
 
-	if len(req.NewPassword) < 6 {
-		return errors.New("password must be at least 6 characters")
+	if len(req.NewPassword) < 8 {
+		return errors.New("password must be at least 8 characters")
 	}
 
 	reset, err := s.repo.GetValidPasswordReset(token)
@@ -76,7 +76,11 @@ func (s *AuthService) ResetPassword(req ResetPasswordRequest) error {
 		return err
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if strings.EqualFold(strings.TrimSpace(req.NewPassword), reset.Email) {
+		return errors.New("password cannot be the same as email")
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), 12)
 	if err != nil {
 		return err
 	}
@@ -88,6 +92,9 @@ func (s *AuthService) ResetPassword(req ResetPasswordRequest) error {
 	if err := s.repo.MarkPasswordResetUsed(token); err != nil {
 		return err
 	}
+
+	// Revoke all refresh tokens for user upon password reset
+	_ = s.repo.RevokeUserRefreshTokens(reset.UserID)
 
 	return nil
 }

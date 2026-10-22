@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"ticketdot/internal/httpx"
 	"ticketdot/internal/seat/service"
 )
 
@@ -24,7 +25,7 @@ func (h *SeatHandler) GetSeats(w http.ResponseWriter, r *http.Request) {
 
 	seats, err := h.service.GetSeatsByScheduleID(scheduleID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 

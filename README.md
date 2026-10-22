@@ -579,6 +579,25 @@ TicketDot/
 
 ---
 
+## 💳 Payment Gateway & Webhooks
+
+TicketDot ingests Razorpay webhooks at `POST /payments/webhook` with cryptographic HMAC-SHA256 signature verification over the raw request payload.
+
+### Webhook Features
+- **Shared Confirmation Logic**: Atomically confirms booking on `payment.captured` and `order.paid` using `ConfirmCapturedPayment` with row-level locks.
+- **Single Email Guarantee**: Guaranteed single dispatch of confirmation emails via database-level `ticket_email_sent_at` claiming.
+- **Idempotency & Replay Protection**: Webhook events deduplicated by `X-Razorpay-Event-Id` in `payment_events`.
+- **Late Payment Grace Handling**: Expired orders whose seats are still available are completed safely; orders whose seats are taken are marked `refund_required`.
+- **Rate Limit & Size Cap**: Protected by 1 MB body limiter and 300 req/min rate limiter.
+
+### Local Webhook Testing
+Run the helper script from the repository root:
+```bash
+./scripts/send_test_webhook.sh <order_id>
+```
+
+---
+
 ## 🧪 Running Tests
 
 Execute all backend unit and repository tests:

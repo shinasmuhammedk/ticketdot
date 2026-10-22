@@ -12,6 +12,7 @@ import (
 	authmiddleware "ticketdot/internal/auth/middleware"
 	"ticketdot/internal/booking/model"
 	"ticketdot/internal/booking/service"
+	"ticketdot/internal/httpx"
 	"ticketdot/internal/notification"
 )
 
@@ -29,20 +30,20 @@ func NewBookingHandler(service *service.BookingService, emailService *notificati
 
 func (h *BookingHandler) LockSeat(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	var req model.LockSeatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req, false); err != nil {
+		httpx.WriteError(w, r, err)
 		return
 	}
 
 	res, err := h.service.LockSeat(userID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -56,20 +57,20 @@ func (h *BookingHandler) LockSeat(w http.ResponseWriter, r *http.Request) {
 
 func (h *BookingHandler) ConfirmBooking(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	var req model.ConfirmBookingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req, false); err != nil {
+		httpx.WriteError(w, r, err)
 		return
 	}
 
 	res, err := h.service.ConfirmBooking(userID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -89,20 +90,20 @@ func (h *BookingHandler) ConfirmBooking(w http.ResponseWriter, r *http.Request) 
 
 func (h *BookingHandler) ReleaseSeats(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	var req model.ReleaseSeatsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req, false); err != nil {
+		httpx.WriteError(w, r, err)
 		return
 	}
 
 	res, err := h.service.ReleaseSeats(userID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -117,14 +118,14 @@ func (h *BookingHandler) ReleaseSeats(w http.ResponseWriter, r *http.Request) {
 
 func (h *BookingHandler) GetMyBookings(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	bookings, err := h.service.GetMyBookings(userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -137,8 +138,8 @@ func (h *BookingHandler) GetMyBookings(w http.ResponseWriter, r *http.Request) {
 
 func (h *BookingHandler) CancelBooking(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
@@ -146,7 +147,7 @@ func (h *BookingHandler) CancelBooking(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.service.CancelBooking(userID, bookingRef)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -169,8 +170,8 @@ func (h *BookingHandler) GetBookingDetails(
 	r *http.Request,
 ) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
-	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
@@ -182,7 +183,7 @@ func (h *BookingHandler) GetBookingDetails(
 	)
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		httpx.WriteError(w, r, httpx.NotFound("booking not found"))
 		return
 	}
 
@@ -197,7 +198,7 @@ func (h *BookingHandler) GetBookingDetails(
 func (h *BookingHandler) SendTicketEmail(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
 	if !ok || userID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
@@ -205,11 +206,11 @@ func (h *BookingHandler) SendTicketEmail(w http.ResponseWriter, r *http.Request)
 	var req struct {
 		Email string `json:"email"`
 	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
+	_ = httpx.DecodeJSON(r, &req, false)
 
 	details, err := h.service.GetBookingDetails(userID, bookingRef)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		httpx.WriteError(w, r, httpx.NotFound("booking not found"))
 		return
 	}
 
@@ -218,7 +219,7 @@ func (h *BookingHandler) SendTicketEmail(w http.ResponseWriter, r *http.Request)
 		recipient = details.ContactEmail
 	}
 	if recipient == "" {
-		http.Error(w, "recipient email is required", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("recipient email is required"))
 		return
 	}
 
@@ -256,7 +257,7 @@ func (h *BookingHandler) SendTicketEmail(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.emailService.SendTicketEmail(recipient, emailData); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpx.WriteError(w, r, httpx.Internal(err))
 		return
 	}
 

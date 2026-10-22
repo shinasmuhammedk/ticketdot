@@ -224,9 +224,9 @@ func (r *PostgresRepository) ConfirmBooking(userID string, req model.ConfirmBook
 	}
 
 	var scheduleInfo struct {
-		BaseFare    float64 `db:"base_fare"`
-		Origin      string  `db:"origin"`
-		Destination string  `db:"destination"`
+		BaseFare    int64  `db:"base_fare"`
+		Origin      string `db:"origin"`
+		Destination string `db:"destination"`
 	}
 	err = tx.Get(&scheduleInfo, `
 		SELECT s.base_fare, oc.name as origin, dc.name as destination
@@ -370,8 +370,9 @@ func (r *PostgresRepository) ConfirmBooking(userID string, req model.ConfirmBook
 		DroppingPoint: droppingPoint,
 		ContactPhone:  contactPhone,
 		ContactEmail:  contactEmail,
-		Status:        "confirmed",
-		TotalAmount:   amount * float64(len(cleaned)),
+		Status:           "confirmed",
+		TotalAmount:      amount * int64(len(cleaned)),
+		TotalAmountPaise: amount * int64(len(cleaned)),
 	}, nil
 }
 
@@ -422,7 +423,7 @@ func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, er
 		ScheduleID    string         `db:"schedule_id"`
 		SeatNumber    string         `db:"seat_number"`
 		Status        string         `db:"status"`
-		Amount        float64        `db:"amount"`
+		Amount        int64          `db:"amount"`
 		ConfirmedAt   time.Time      `db:"confirmed_at"`
 		CreatedAt     time.Time      `db:"created_at"`
 		Origin        string         `db:"origin"`
@@ -486,6 +487,7 @@ func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, er
 			result[idx].SeatNumber = strings.Join(result[idx].Seats, ", ")
 			result[idx].Seat = result[idx].SeatNumber
 			result[idx].Amount += row.Amount
+			result[idx].AmountPaise = result[idx].Amount
 		} else {
 			pID := ""
 			if row.PaymentID.Valid {
@@ -519,6 +521,7 @@ func (r *PostgresRepository) GetMyBookings(userID string) ([]model.MyBooking, er
 				ArrivalTime:   row.ArrivalTime,
 				Status:        row.Status,
 				Amount:        row.Amount,
+				AmountPaise:   row.Amount,
 				ConfirmedAt:   row.ConfirmedAt,
 				PaymentID:     pID,
 				PaymentStatus: pStatus,
@@ -607,8 +610,8 @@ func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.Ca
 
 	// Automated Refund Processing: Check if there was a captured payment for this booking
 	var paymentInfo struct {
-		Amount float64 `db:"amount"`
-		Status string  `db:"status"`
+		Amount int64  `db:"amount"`
+		Status string `db:"status"`
 	}
 	err = tx.Get(&paymentInfo, `
 		SELECT amount, status
@@ -618,7 +621,7 @@ func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.Ca
 	`, bookingRef)
 
 	refundID := ""
-	refundAmount := 0.0
+	var refundAmount int64
 	refundStatus := ""
 	refundTimeline := ""
 
@@ -647,14 +650,15 @@ func (r *PostgresRepository) CancelBooking(userID, bookingRef string) (*model.Ca
 	}
 
 	return &model.CancelBookingResponse{
-		BookingRef:     bookingRef,
-		Status:         "cancelled",
-		Message:        "booking cancelled successfully",
-		Seats:          cancelledSeats,
-		RefundID:       refundID,
-		RefundAmount:   refundAmount,
-		RefundStatus:   refundStatus,
-		RefundTimeline: refundTimeline,
+		BookingRef:        bookingRef,
+		Status:            "cancelled",
+		Message:           "booking cancelled successfully",
+		Seats:             cancelledSeats,
+		RefundID:          refundID,
+		RefundAmount:      refundAmount,
+		RefundAmountPaise: refundAmount,
+		RefundStatus:      refundStatus,
+		RefundTimeline:    refundTimeline,
 	}, nil
 }
 
@@ -667,7 +671,7 @@ func (r *PostgresRepository) GetBookingDetails(
 		BookingRef      string         `db:"booking_ref"`
 		SeatNumber      string         `db:"seat_number"`
 		Status          string         `db:"status"`
-		Amount          float64        `db:"amount"`
+		Amount          int64          `db:"amount"`
 		PassengerName   string         `db:"passenger_name"`
 		PassengerAge    sql.NullInt32  `db:"passenger_age"`
 		PassengerGender sql.NullString `db:"passenger_gender"`
@@ -734,7 +738,7 @@ func (r *PostgresRepository) GetBookingDetails(
 
 	var seats []string
 	var passengers []model.PassengerInfo
-	var totalAmount float64
+	var totalAmount int64
 	for _, row := range rows {
 		seats = append(seats, row.SeatNumber)
 		totalAmount += row.Amount
@@ -793,16 +797,17 @@ func (r *PostgresRepository) GetBookingDetails(
 		DepartureTime:   first.DepartureTime,
 		ArrivalTime:     first.ArrivalTime,
 		Amount:          totalAmount,
+		AmountPaise:     totalAmount,
 		Status:          first.Status,
 	}
 
 	var payRow struct {
-		PaymentID     sql.NullString  `db:"payment_id"`
-		PaymentMethod sql.NullString  `db:"payment_method"`
-		Status        sql.NullString  `db:"status"`
-		RefundID      sql.NullString  `db:"refund_id"`
-		RefundAmount  sql.NullFloat64 `db:"refund_amount"`
-		RefundStatus  sql.NullString  `db:"refund_status"`
+		PaymentID     sql.NullString `db:"payment_id"`
+		PaymentMethod sql.NullString `db:"payment_method"`
+		Status        sql.NullString `db:"status"`
+		RefundID      sql.NullString `db:"refund_id"`
+		RefundAmount  sql.NullInt64  `db:"refund_amount"`
+		RefundStatus  sql.NullString `db:"refund_status"`
 	}
 	_ = r.db.Get(&payRow, `
 		SELECT payment_id, payment_method, status, refund_id, refund_amount, refund_status
@@ -825,7 +830,8 @@ func (r *PostgresRepository) GetBookingDetails(
 		resp.RefundID = payRow.RefundID.String
 	}
 	if payRow.RefundAmount.Valid {
-		resp.RefundAmount = payRow.RefundAmount.Float64
+		resp.RefundAmount = payRow.RefundAmount.Int64
+		resp.RefundAmountPaise = payRow.RefundAmount.Int64
 	}
 	if payRow.RefundStatus.Valid {
 		resp.RefundStatus = payRow.RefundStatus.String

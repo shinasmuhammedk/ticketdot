@@ -27,6 +27,10 @@ func StartExpiredLockCleaner(ctx context.Context, db *sqlx.DB) {
 	}()
 }
 
+func ReleaseExpiredLocks(db *sqlx.DB) {
+	releaseExpiredLocks(db)
+}
+
 func releaseExpiredLocks(db *sqlx.DB) {
 	query := `
 		UPDATE seat_inventory
@@ -37,6 +41,13 @@ func releaseExpiredLocks(db *sqlx.DB) {
 			lock_expires = NULL
 		WHERE status = 'locked'
 		  AND lock_expires < NOW()
+		  AND NOT EXISTS (
+			SELECT 1 FROM payments p
+			WHERE p.schedule_id = seat_inventory.schedule_id
+			  AND seat_inventory.seat_number = ANY(p.seats)
+			  AND p.status = 'pending'
+			  AND (p.expires_at IS NULL OR p.expires_at > NOW())
+		  )
 	`
 
 	result, err := db.Exec(query)

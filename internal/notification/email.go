@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"ticketdot/internal/money"
 )
 
 type EmailService struct {
@@ -45,7 +47,8 @@ type TicketEmailData struct {
 	Seats         []string
 	SeatsDisplay  string
 	Passengers    []PassengerManifestItem
-	Amount        float64
+	Amount        int64
+	AmountDisplay string
 	PaymentID     string
 	PaymentMethod string
 	PaymentStatus string
@@ -54,18 +57,19 @@ type TicketEmailData struct {
 }
 
 type RefundEmailData struct {
-	BookingRef     string
-	PassengerName  string
-	OperatorName   string
-	Origin         string
-	Destination    string
-	SeatsDisplay   string
-	RefundID       string
-	RefundAmount   float64
-	RefundStatus   string
-	RefundTimeline string
-	CancelledAt    string
-	Year           int
+	BookingRef          string
+	PassengerName       string
+	OperatorName        string
+	Origin              string
+	Destination         string
+	SeatsDisplay        string
+	RefundID            string
+	RefundAmount        int64
+	RefundAmountDisplay string
+	RefundStatus        string
+	RefundTimeline      string
+	CancelledAt         string
+	Year                int
 }
 
 func NewEmailService() *EmailService {
@@ -217,7 +221,7 @@ const ticketEmailTemplate = `
           <div style="font-size: 11px; font-weight: bold; color: #047857; text-transform: uppercase;">Payment Verified ({{.PaymentStatus}})</div>
           <div style="font-size: 11px; color: #065f46; font-family: monospace;">Txn: {{.PaymentID}} • {{.PaymentMethod}}</div>
         </div>
-        <div class="total-paid">₹{{printf "%.2f" .Amount}}</div>
+        <div class="total-paid">{{.AmountDisplay}}</div>
       </div>
 
       <div style="font-size: 11px; color: #64748b; line-height: 1.5; background: #f1f5f9; padding: 12px; border-radius: 8px;">
@@ -264,7 +268,7 @@ const refundEmailTemplate = `
 
       <div class="refund-box">
         <div style="font-size: 11px; font-weight: 700; color: #9f1239; text-transform: uppercase;">Refund Initiated</div>
-        <div class="refund-amount">₹{{printf "%.2f" .RefundAmount}}</div>
+        <div class="refund-amount">{{.RefundAmountDisplay}}</div>
         <div style="font-size: 12px; color: #881337; margin-top: 4px; font-family: monospace;">
           Refund Reference ID: <strong>{{.RefundID}}</strong>
         </div>
@@ -295,6 +299,9 @@ func (s *EmailService) SendTicketEmail(toEmail string, data TicketEmailData) err
 	if len(data.Seats) > 0 && data.SeatsDisplay == "" {
 		data.SeatsDisplay = strings.Join(data.Seats, ", ")
 	}
+	if data.AmountDisplay == "" {
+		data.AmountDisplay = money.FormatINR(data.Amount)
+	}
 
 	tmpl, err := template.New("ticketEmail").Parse(ticketEmailTemplate)
 	if err != nil {
@@ -318,6 +325,9 @@ func (s *EmailService) SendRefundEmail(toEmail string, data RefundEmailData) err
 	}
 
 	data.Year = time.Now().Year()
+	if data.RefundAmountDisplay == "" {
+		data.RefundAmountDisplay = money.FormatINR(data.RefundAmount)
+	}
 
 	tmpl, err := template.New("refundEmail").Parse(refundEmailTemplate)
 	if err != nil {
@@ -329,7 +339,7 @@ func (s *EmailService) SendRefundEmail(toEmail string, data RefundEmailData) err
 		return fmt.Errorf("failed to render refund template: %w", err)
 	}
 
-	subject := fmt.Sprintf("Booking Cancelled & Refund Initiated [%s] - ₹%.2f", data.BookingRef, data.RefundAmount)
+	subject := fmt.Sprintf("Booking Cancelled & Refund Initiated [%s] - %s", data.BookingRef, data.RefundAmountDisplay)
 
 	return s.sendEmail(toEmail, subject, body.String(), data.BookingRef, "refund")
 }

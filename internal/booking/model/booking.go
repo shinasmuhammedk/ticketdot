@@ -34,17 +34,18 @@ type ConfirmBookingRequest struct {
 }
 
 type ConfirmBookingResponse struct {
-	BookingRef    string            `json:"booking_ref"`
-	ScheduleID    string            `json:"schedule_id"`
-	Seat          string            `json:"seat,omitempty"`
-	Seats         []string          `json:"seats"`
-	Passengers    []PassengerDetail `json:"passengers,omitempty"`
-	BoardingPoint string            `json:"boarding_point,omitempty"`
-	DroppingPoint string            `json:"dropping_point,omitempty"`
-	ContactPhone  string            `json:"contact_phone,omitempty"`
-	ContactEmail  string            `json:"contact_email,omitempty"`
-	Status        string            `json:"status"`
-	TotalAmount   float64           `json:"total_amount,omitempty"`
+	BookingRef       string            `json:"booking_ref"`
+	ScheduleID       string            `json:"schedule_id"`
+	Seat             string            `json:"seat,omitempty"`
+	Seats            []string          `json:"seats"`
+	Passengers       []PassengerDetail `json:"passengers,omitempty"`
+	BoardingPoint    string            `json:"boarding_point,omitempty"`
+	DroppingPoint    string            `json:"dropping_point,omitempty"`
+	ContactPhone     string            `json:"contact_phone,omitempty"`
+	ContactEmail     string            `json:"contact_email,omitempty"`
+	Status           string            `json:"status"`
+	TotalAmount      int64             `json:"total_amount,omitempty"`       // Amount in paise
+	TotalAmountPaise int64             `json:"total_amount_paise,omitempty"` // Explicit paise field
 }
 
 type ReleaseSeatsRequest struct {
@@ -72,7 +73,8 @@ type MyBooking struct {
 	DepartureTime string    `db:"departure_time" json:"departure_time"`
 	ArrivalTime   string    `db:"arrival_time" json:"arrival_time"`
 	Status        string    `db:"status" json:"status"`
-	Amount        float64   `db:"amount" json:"amount"`
+	Amount        int64     `db:"amount" json:"amount"`             // Amount in paise
+	AmountPaise   int64     `db:"-" json:"amount_paise"`           // Explicit paise field
 	ConfirmedAt   time.Time `db:"confirmed_at" json:"confirmed_at"`
 	PaymentID     string    `db:"payment_id" json:"payment_id,omitempty"`
 	PaymentStatus string    `db:"payment_status" json:"payment_status,omitempty"`
@@ -81,12 +83,13 @@ type MyBooking struct {
 }
 
 type CancelBookingResponse struct {
-	BookingRef     string   `json:"booking_ref"`
-	Status         string   `json:"status"`
-	Message        string   `json:"message"`
-	Seats          []string `json:"seats,omitempty"`
-	RefundID       string   `json:"refund_id,omitempty"`
-	RefundAmount   float64  `json:"refund_amount,omitempty"`
-	RefundStatus   string   `json:"refund_status,omitempty"`
-	RefundTimeline string   `json:"refund_timeline,omitempty"`
+	BookingRef        string   `json:"booking_ref"`
+	Status            string   `json:"status"`
+	Message           string   `json:"message"`
+	Seats             []string `json:"seats,omitempty"`
+	RefundID          string   `json:"refund_id,omitempty"`
+	RefundAmount      int64    `json:"refund_amount,omitempty"`       // Refund in paise
+	RefundAmountPaise int64    `json:"refund_amount_paise,omitempty"` // Explicit paise field
+	RefundStatus      string   `json:"refund_status,omitempty"`
+	RefundTimeline    string   `json:"refund_timeline,omitempty"`
 }

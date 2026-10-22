@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
 
+	authcleanup "ticketdot/internal/auth/cleanup"
 	authhandler "ticketdot/internal/auth/handler"
 	authrepository "ticketdot/internal/auth/repository"
 	authservice "ticketdot/internal/auth/service"
@@ -21,6 +21,7 @@ import (
 	bookingrepository "ticketdot/internal/booking/repository"
 	bookingservice "ticketdot/internal/booking/service"
 
+	"ticketdot/internal/config"
 	"ticketdot/internal/db"
 	"ticketdot/internal/health"
 	"ticketdot/migrations"
@@ -44,6 +45,8 @@ import (
 	profileservice "ticketdot/internal/profile/service"
 	"ticketdot/internal/schedule/lifecycle"
 
+	paymentcleanup "ticketdot/internal/payment/cleanup"
+	paymentgateway "ticketdot/internal/payment/gateway"
 	paymenthandler "ticketdot/internal/payment/handler"
 	paymentrepository "ticketdot/internal/payment/repository"
 	paymentservice "ticketdot/internal/payment/service"
@@ -64,22 +67,12 @@ func main() {
 		log.Println("No .env file found")
 	}
 
-	jwtSecret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
-	if jwtSecret == "" {
-		log.Fatal("JWT_SECRET is not set")
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("configuration error: %v", err)
 	}
 
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		log.Fatal("DATABASE_URL is not set")
-	}
-
-	port := strings.TrimSpace(os.Getenv("PORT"))
-	if port == "" {
-		port = "8080"
-	}
-
-	database := db.Connect(databaseURL)
+	database := db.Connect(cfg.DatabaseURL)
 
 	if err := migrations.Run(database); err != nil {
 		log.Fatalf("failed to run migrations: %v", err)
@@ -94,6 +87,7 @@ func main() {
 	healthHandler := health.NewHealthHandler(database)
 
 	authRepo := authrepository.NewPostgresRepository(database)
+	authcleanup.StartRefreshTokenCleaner(ctx, authRepo, 1*time.Hour)
 	authService := authservice.NewAuthService(authRepo)
 	authHandler := authhandler.NewAuthHandler(authService)
 
@@ -120,7 +114,23 @@ func main() {
 	profileHandler := profilehandler.NewProfileHandler(profileService)
 
 	paymentRepo := paymentrepository.NewPostgresRepository(database)
-	paymentService := paymentservice.NewPaymentService(paymentRepo)
+	paymentcleanup.StartOrderExpiryWorker(ctx, paymentRepo, 30*time.Second)
+	var paymentGateway paymentgateway.Gateway
+	if cfg.PaymentGateway == "fake" {
+		paymentGateway = paymentgateway.NewFakeGateway()
+	} else {
+		paymentGateway = paymentgateway.NewRazorpayGateway(cfg.RazorpayKeyID, cfg.RazorpayKeySecret)
+	}
+	paymentService := paymentservice.NewPaymentService(
+		paymentRepo,
+		paymentGateway,
+		cfg.RazorpayKeyID,
+		cfg.RazorpayKeySecret,
+		cfg.PaymentWebhookSecret,
+		cfg.PaymentWindowMinutes,
+		cfg.MaxOrderAmountPaise,
+	)
+	paymentService.SetEmailService(emailService)
 	paymentHandler := paymenthandler.NewPaymentHandler(paymentService, emailService)
 
 	trackingRepo := trackingrepository.NewPostgresTrackingRepository(database)
@@ -132,6 +142,7 @@ func main() {
 	reviewHandler := reviewhandler.NewReviewHandler(reviewService)
 
 	router := routes.SetupRoutes(routes.Handlers{
+		Config:   cfg,
 		Health:   healthHandler,
 		Auth:     authHandler,
 		Search:   searchHandler,
@@ -145,7 +156,7 @@ func main() {
 	})
 
 	server := &http.Server{
-		Addr:         ":" + port,
+		Addr:         ":" + cfg.Port,
 		Handler:      router,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -154,7 +165,7 @@ func main() {
 
 	// Run HTTP listener in goroutine
 	go func() {
-		log.Printf("Server running on :%s", port)
+		log.Printf("Server running on :%s", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}

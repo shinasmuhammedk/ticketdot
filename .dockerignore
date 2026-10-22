@@ -1,0 +1,9 @@
+.git
+.github
+*.exe
+tmp/
+bin/
+test_output.log
+.env
+.env.local
+coverage.out

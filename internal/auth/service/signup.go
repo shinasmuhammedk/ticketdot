@@ -38,8 +38,12 @@ func (s *AuthService) Signup(req SignupRequest) (*model.User, error) {
 		return nil, errors.New("password is required")
 	}
 
-	if len(req.Password) < 6 {
-		return nil, errors.New("password must be at least 6 characters")
+	if len(req.Password) < 8 {
+		return nil, errors.New("password must be at least 8 characters")
+	}
+
+	if strings.EqualFold(strings.TrimSpace(req.Password), req.Email) {
+		return nil, errors.New("password cannot be the same as email")
 	}
 
 	existingUser, err := s.repo.GetUserByEmail(req.Email)
@@ -51,7 +55,7 @@ func (s *AuthService) Signup(req SignupRequest) (*model.User, error) {
 		return nil, err
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
 		return nil, err
 	}

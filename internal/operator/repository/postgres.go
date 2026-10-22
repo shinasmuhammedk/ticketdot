@@ -148,6 +148,7 @@ func (r *PostgresRepository) CreateRoute(
 func (r *PostgresRepository) CreateSchedule(
 	operatorID string,
 	req model.CreateScheduleRequest,
+	farePaise int64,
 ) (*model.CreateScheduleResponse, error) {
 
 	tx, err := r.db.Beginx()
@@ -228,7 +229,7 @@ func (r *PostgresRepository) CreateSchedule(
 		req.DepartureTime,
 		req.ArrivalTime,
 		totalSeats,
-		req.BaseFare,
+		farePaise,
 	).Scan(
 		&schedule.ID,
 		&schedule.RouteID,
@@ -244,6 +245,8 @@ func (r *PostgresRepository) CreateSchedule(
 	if err != nil {
 		return nil, err
 	}
+
+	schedule.BaseFarePaise = schedule.BaseFare
 
 	_, err = tx.Exec(
 		`
@@ -347,6 +350,10 @@ func (r *PostgresRepository) GetBookings(
 	err := r.db.Select(&bookings, query, operatorID)
 	if err != nil {
 		return nil, err
+	}
+
+	for i := range bookings {
+		bookings[i].AmountPaise = bookings[i].Amount
 	}
 
 	return bookings, nil
@@ -477,6 +484,10 @@ func (r *PostgresRepository) GetSchedules(
 		return nil, err
 	}
 
+	for i := range schedules {
+		schedules[i].BaseFarePaise = schedules[i].BaseFare
+	}
+
 	return schedules, nil
 }
 
@@ -535,6 +546,8 @@ func (r *PostgresRepository) GetDashboardStats(
 	if err != nil {
 		return nil, err
 	}
+
+	stats.TotalRevenuePaise = stats.TotalRevenue
 
 	return &stats, nil
 }
@@ -833,28 +846,32 @@ func (r *PostgresRepository) GetAnalytics(
 	}
 
 	now := time.Now().UTC()
-	var totalRevenue float64
+	var totalRevenue int64
 	var totalTickets int
 
 	for i := periodDays - 1; i >= 0; i-- {
 		day := now.AddDate(0, 0, -i).Format("2006-01-02")
 		if existing, ok := pointMap[day]; ok {
+			existing.RevenuePaise = existing.Revenue
 			overview.RevenueTimeline = append(overview.RevenueTimeline, existing)
 			totalRevenue += existing.Revenue
 			totalTickets += existing.TicketsSold
 		} else {
 			overview.RevenueTimeline = append(overview.RevenueTimeline, model.DailyRevenuePoint{
-				Date:        day,
-				Revenue:     0,
-				TicketsSold: 0,
+				Date:         day,
+				Revenue:      0,
+				RevenuePaise: 0,
+				TicketsSold:  0,
 			})
 		}
 	}
 
 	overview.TotalRevenue = totalRevenue
+	overview.TotalRevenuePaise = totalRevenue
 	overview.TotalTickets = totalTickets
 	if totalTickets > 0 {
-		overview.AvgTicketPrice = math.Round((totalRevenue/float64(totalTickets))*100) / 100
+		overview.AvgTicketPrice = totalRevenue / int64(totalTickets)
+		overview.AvgTicketPricePaise = overview.AvgTicketPrice
 	}
 
 	// 2. Route Occupancy and Performance
@@ -881,6 +898,7 @@ func (r *PostgresRepository) GetAnalytics(
 	err = r.db.Select(&routeStats, routeQuery, operatorID)
 	if err == nil {
 		for i := range routeStats {
+			routeStats[i].TotalRevenuePaise = routeStats[i].TotalRevenue
 			routeStats[i].Corridor = fmt.Sprintf("%s → %s", routeStats[i].Origin, routeStats[i].Destination)
 			if routeStats[i].TotalSeatsOffered > 0 {
 				rate := (float64(routeStats[i].TotalSeatsBooked) / float64(routeStats[i].TotalSeatsOffered)) * 100
@@ -914,6 +932,7 @@ func (r *PostgresRepository) GetAnalytics(
 	err = r.db.Select(&fleetStats, fleetQuery, operatorID)
 	if err == nil {
 		for i := range fleetStats {
+			fleetStats[i].TotalRevenuePaise = fleetStats[i].TotalRevenue
 			totalPossibleSeats := fleetStats[i].TotalTrips * fleetStats[i].TotalSeats
 			if totalPossibleSeats > 0 {
 				rate := (float64(fleetStats[i].SeatsBooked) / float64(totalPossibleSeats)) * 100

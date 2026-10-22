@@ -2,13 +2,15 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	authmiddleware "ticketdot/internal/auth/middleware"
-	"strings"
+	"ticketdot/internal/httpx"
 	"ticketdot/internal/notification"
 	"ticketdot/internal/payment/model"
 	"ticketdot/internal/payment/service"
@@ -29,19 +31,19 @@ func NewPaymentHandler(service *service.PaymentService, emailService *notificati
 func (h *PaymentHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
 	if !ok || userID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	var req model.CreateOrderRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req, true); err != nil {
+		httpx.WriteError(w, r, err)
 		return
 	}
 
 	res, err := h.service.CreateOrder(r.Context(), userID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, err)
 		return
 	}
 
@@ -56,58 +58,42 @@ func (h *PaymentHandler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 func (h *PaymentHandler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
 	if !ok || userID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	var req model.VerifyPaymentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req, true); err != nil {
+		httpx.WriteError(w, r, err)
 		return
 	}
 
 	res, err := h.service.VerifyPayment(r.Context(), userID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, err)
 		return
 	}
 
-	// Asynchronously dispatch e-ticket email upon payment verification & seat booking
-	if h.emailService != nil && res.ContactEmail != "" {
-		go func() {
-			defer func() { _ = recover() }()
-			var manifest []notification.PassengerManifestItem
-			for _, p := range res.Passengers {
-				manifest = append(manifest, notification.PassengerManifestItem{
-					SeatNumber: p.SeatNumber,
-					Name:       p.Name,
-					Age:        p.Age,
-					Gender:     p.Gender,
-				})
-			}
-			pName := "Passenger"
-			if len(res.Passengers) > 0 && res.Passengers[0].Name != "" {
-				pName = res.Passengers[0].Name
-			}
-			emailData := notification.TicketEmailData{
-				BookingRef:    res.BookingRef,
-				PassengerName: pName,
-				Origin:        res.BoardingPoint,
-				Destination:   res.DroppingPoint,
-				BoardingPoint: res.BoardingPoint,
-				DroppingPoint: res.DroppingPoint,
-				ContactPhone:  res.ContactPhone,
-				ContactEmail:  res.ContactEmail,
-				Seats:         res.Seats,
-				SeatsDisplay:  strings.Join(res.Seats, ", "),
-				Passengers:    manifest,
-				Amount:        res.TotalAmount,
-				PaymentID:     res.PaymentID,
-				PaymentMethod: res.PaymentMethod,
-				PaymentStatus: "captured",
-			}
-			_ = h.emailService.SendTicketEmail(res.ContactEmail, emailData)
-		}()
+	if res.Status == "processing" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "processing",
+			"message": "payment authorized and being processed",
+			"data":    res,
+		})
+		return
+	}
+
+	if res.Status == "refund_required" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":  "refund_required",
+			"message": "payment received, booking could not be completed, refund will be processed",
+			"data":    res,
+		})
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -119,15 +105,21 @@ func (h *PaymentHandler) VerifyPayment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PaymentHandler) GetPaymentStatus(w http.ResponseWriter, r *http.Request) {
-	orderID := chi.URLParam(r, "orderID")
-	if orderID == "" {
-		http.Error(w, "order id is required", http.StatusBadRequest)
+	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
-	res, err := h.service.GetPaymentStatus(r.Context(), orderID)
+	orderID := chi.URLParam(r, "orderID")
+	if orderID == "" {
+		httpx.WriteError(w, r, httpx.Validation("order id is required"))
+		return
+	}
+
+	res, err := h.service.GetPaymentStatus(r.Context(), userID, orderID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		httpx.WriteError(w, r, httpx.NotFound("payment not found"))
 		return
 	}
 
@@ -144,15 +136,17 @@ func (h *PaymentHandler) GenerateTestSignature(w http.ResponseWriter, r *http.Re
 		OrderID   string `json:"order_id"`
 		PaymentID string `json:"payment_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &body, true); err != nil {
+		httpx.WriteError(w, r, err)
 		return
 	}
 
 	if body.OrderID == "" || body.PaymentID == "" {
-		http.Error(w, "order_id and payment_id are required", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("order_id and payment_id are required"))
 		return
 	}
+
+	_ = h.service.RegisterTestPaymentIfFake(r.Context(), body.OrderID, body.PaymentID)
 
 	sig := h.service.GenerateSignature(body.OrderID, body.PaymentID)
 	w.Header().Set("Content-Type", "application/json")
@@ -163,25 +157,63 @@ func (h *PaymentHandler) GenerateTestSignature(w http.ResponseWriter, r *http.Re
 }
 
 func (h *PaymentHandler) HandleWebhook(w http.ResponseWriter, r *http.Request) {
+	// 1. Read raw body through MaxBytesReader (default 1 MB)
+	const maxWebhookBodyBytes = int64(1048576) // 1 MB
+	r.Body = http.MaxBytesReader(w, r.Body, maxWebhookBodyBytes)
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "failed to read body", http.StatusBadRequest)
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "request entity too large"})
+			return
+		}
+		httpx.WriteError(w, r, httpx.Validation("failed to read body"))
 		return
 	}
 	defer r.Body.Close()
 
-	signature := r.Header.Get("X-Razorpay-Signature")
+	// 2. Validate X-Razorpay-Signature header
+	signature := strings.TrimSpace(r.Header.Get("X-Razorpay-Signature"))
 	if signature == "" {
-		signature = r.Header.Get("x-razorpay-signature")
+		signature = strings.TrimSpace(r.Header.Get("x-razorpay-signature"))
+	}
+	if signature == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+		return
 	}
 
-	if err := h.service.ProcessWebhook(r.Context(), body, signature); err != nil {
-		http.Error(w, err.Error(), http.StatusUnauthorized)
+	eventID := strings.TrimSpace(r.Header.Get("X-Razorpay-Event-Id"))
+	if eventID == "" {
+		eventID = strings.TrimSpace(r.Header.Get("x-razorpay-event-id"))
+	}
+
+	// 3. Process webhook event atomically
+	if err := h.service.ProcessWebhook(r.Context(), eventID, body, signature); err != nil {
+		var appErr *httpx.AppError
+		if errors.As(err, &appErr) {
+			if appErr.StatusCode == http.StatusUnauthorized {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"})
+				return
+			}
+			httpx.WriteError(w, r, appErr)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": "internal server error"})
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
 }

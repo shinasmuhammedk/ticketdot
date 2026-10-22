@@ -62,6 +62,10 @@ func (r *PostgresRepository) SearchBuses(from, to, date string) ([]model.BusSear
 		return nil, err
 	}
 
+	for i := range buses {
+		buses[i].BaseFarePaise = buses[i].BaseFare
+	}
+
 	return buses, nil
 }
 
@@ -91,6 +95,8 @@ func (r *PostgresRepository) GetScheduleDetails(scheduleID string) (*model.Sched
 	if err != nil {
 		return nil, err
 	}
+
+	schedule.BaseFarePaise = schedule.BaseFare
 
 	return &schedule, nil
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"ticketdot/internal/money"
 	"ticketdot/internal/operator/model"
 	"ticketdot/internal/operator/repository"
 )
@@ -116,7 +117,11 @@ func (s *OperatorService) CreateSchedule(operatorID string, req model.CreateSche
 		return nil, errors.New("arrival time is required")
 	}
 
-	if req.BaseFare <= 0 {
+	farePaise, err := money.RupeesToPaise(req.BaseFare)
+	if err != nil {
+		return nil, err
+	}
+	if farePaise <= 0 {
 		return nil, errors.New("base fare must be greater than zero")
 	}
 
@@ -138,7 +143,7 @@ func (s *OperatorService) CreateSchedule(operatorID string, req model.CreateSche
 		return nil, errors.New("departure time must be in the future; passengers cannot search or book trips that have already departed")
 	}
 
-	return s.repo.CreateSchedule(operatorID, req)
+	return s.repo.CreateSchedule(operatorID, req, farePaise)
 }
 
 

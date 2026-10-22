@@ -3,8 +3,10 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	authmiddleware "ticketdot/internal/auth/middleware"
+	"ticketdot/internal/httpx"
 	"ticketdot/internal/tracking/model"
 	"ticketdot/internal/tracking/service"
 
@@ -23,13 +25,13 @@ func NewTrackingHandler(service *service.TrackingService) *TrackingHandler {
 func (h *TrackingHandler) GetTracking(w http.ResponseWriter, r *http.Request) {
 	identifier := chi.URLParam(r, "identifier")
 	if identifier == "" {
-		http.Error(w, "missing trip or booking identifier", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("missing trip or booking identifier"))
 		return
 	}
 
 	details, err := h.service.GetTripTracking(r.Context(), identifier)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		httpx.WriteError(w, r, httpx.NotFound(err.Error()))
 		return
 	}
 
@@ -44,20 +46,24 @@ func (h *TrackingHandler) GetTracking(w http.ResponseWriter, r *http.Request) {
 func (h *TrackingHandler) UpdateLocation(w http.ResponseWriter, r *http.Request) {
 	scheduleID := chi.URLParam(r, "scheduleID")
 	if scheduleID == "" {
-		http.Error(w, "missing schedule ID", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("missing schedule ID"))
 		return
 	}
 
-	operatorID, _ := r.Context().Value(authmiddleware.UserIDKey).(string)
+	operatorID, _ := r.Context().Value(authmiddleware.OperatorIDKey).(string)
 
 	var req model.UpdateLocationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("invalid request body"))
 		return
 	}
 
 	if err := h.service.UpdateLocation(r.Context(), scheduleID, operatorID, req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		if strings.Contains(err.Error(), "unauthorized") {
+			httpx.WriteError(w, r, httpx.Forbidden(err.Error()))
+			return
+		}
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -71,21 +77,24 @@ func (h *TrackingHandler) UpdateLocation(w http.ResponseWriter, r *http.Request)
 func (h *TrackingHandler) SimulateTrip(w http.ResponseWriter, r *http.Request) {
 	scheduleID := chi.URLParam(r, "scheduleID")
 	if scheduleID == "" {
-		http.Error(w, "missing schedule ID", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("missing schedule ID"))
 		return
 	}
 
-	operatorID, _ := r.Context().Value(authmiddleware.UserIDKey).(string)
+	operatorID, _ := r.Context().Value(authmiddleware.OperatorIDKey).(string)
 
 	var req model.SimulateTripRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// default to step action if empty
 		req.Action = "step"
 	}
 
 	updated, err := h.service.SimulateTrip(r.Context(), scheduleID, operatorID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		if strings.Contains(err.Error(), "unauthorized") {
+			httpx.WriteError(w, r, httpx.Forbidden(err.Error()))
+			return
+		}
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 

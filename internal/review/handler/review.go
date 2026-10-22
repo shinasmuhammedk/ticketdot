@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	authmiddleware "ticketdot/internal/auth/middleware"
+	"ticketdot/internal/httpx"
 	"ticketdot/internal/review/model"
 	"ticketdot/internal/review/service"
 
@@ -24,19 +25,19 @@ func NewReviewHandler(service *service.ReviewService) *ReviewHandler {
 func (h *ReviewHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
 	if !ok || userID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	var req model.SubmitReviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("invalid request body"))
 		return
 	}
 
 	review, err := h.service.SubmitReview(r.Context(), userID, req)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -52,13 +53,13 @@ func (h *ReviewHandler) SubmitReview(w http.ResponseWriter, r *http.Request) {
 func (h *ReviewHandler) GetBookingReview(w http.ResponseWriter, r *http.Request) {
 	bookingRef := chi.URLParam(r, "bookingRef")
 	if bookingRef == "" {
-		http.Error(w, "missing booking reference", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("missing booking reference"))
 		return
 	}
 
 	review, err := h.service.GetBookingReview(r.Context(), bookingRef)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpx.WriteError(w, r, httpx.Internal(err))
 		return
 	}
 
@@ -72,7 +73,7 @@ func (h *ReviewHandler) GetBookingReview(w http.ResponseWriter, r *http.Request)
 func (h *ReviewHandler) GetBusReviews(w http.ResponseWriter, r *http.Request) {
 	busID := chi.URLParam(r, "busID")
 	if busID == "" {
-		http.Error(w, "missing bus ID", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("missing bus ID"))
 		return
 	}
 
@@ -81,7 +82,7 @@ func (h *ReviewHandler) GetBusReviews(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.service.GetBusReviews(r.Context(), busID, page, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -98,7 +99,7 @@ func (h *ReviewHandler) GetOperatorReviews(w http.ResponseWriter, r *http.Reques
 		operatorID, _ = r.Context().Value(authmiddleware.UserIDKey).(string)
 	}
 	if operatorID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
@@ -107,7 +108,7 @@ func (h *ReviewHandler) GetOperatorReviews(w http.ResponseWriter, r *http.Reques
 
 	res, err := h.service.GetOperatorReviews(r.Context(), operatorID, page, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
@@ -124,24 +125,24 @@ func (h *ReviewHandler) ReplyToReview(w http.ResponseWriter, r *http.Request) {
 		operatorID, _ = r.Context().Value(authmiddleware.UserIDKey).(string)
 	}
 	if operatorID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	reviewID := chi.URLParam(r, "reviewID")
 	if reviewID == "" {
-		http.Error(w, "missing review ID", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("missing review ID"))
 		return
 	}
 
 	var req model.OperatorReplyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation("invalid request body"))
 		return
 	}
 
 	if err := h.service.ReplyToReview(r.Context(), reviewID, operatorID, req.Reply); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 

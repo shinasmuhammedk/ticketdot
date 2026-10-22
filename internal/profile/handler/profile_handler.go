@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	authmiddleware "ticketdot/internal/auth/middleware"
+	"ticketdot/internal/httpx"
 	"ticketdot/internal/profile/model"
 	"ticketdot/internal/profile/service"
 )
@@ -25,88 +26,46 @@ func (h *ProfileHandler) GetProfile(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-
-	userID, ok := r.Context().
-		Value(authmiddleware.UserIDKey).(string)
-
-	if !ok {
-		http.Error(
-			w,
-			"unauthorized",
-			http.StatusUnauthorized,
-		)
+	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	profile, err := h.service.GetProfile(userID)
-
 	if err != nil {
-		http.Error(
-			w,
-			err.Error(),
-			http.StatusInternalServerError,
-		)
+		httpx.WriteError(w, r, httpx.Internal(err))
 		return
 	}
 
-	w.Header().Set(
-		"Content-Type",
-		"application/json",
-	)
-
-	json.NewEncoder(w).Encode(
-		map[string]any{
-			"data": profile,
-		},
-	)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"data": profile,
+	})
 }
 
 func (h *ProfileHandler) UpdateProfile(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-
-	userID, ok := r.Context().
-		Value(authmiddleware.UserIDKey).(string)
-
-	if !ok {
-		http.Error(
-			w,
-			"unauthorized",
-			http.StatusUnauthorized,
-		)
+	userID, ok := r.Context().Value(authmiddleware.UserIDKey).(string)
+	if !ok || userID == "" {
+		httpx.WriteError(w, r, httpx.Unauthorized("unauthorized"))
 		return
 	}
 
 	var req model.UpdateProfileRequest
-
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(
-			w,
-			"invalid request body",
-			http.StatusBadRequest,
-		)
+		httpx.WriteError(w, r, httpx.Validation("invalid request body"))
 		return
 	}
 
-	if err := h.service.UpdateProfile(
-		userID,
-		&req,
-	); err != nil {
-
-		http.Error(
-			w,
-			err.Error(),
-			http.StatusBadRequest,
-		)
+	if err := h.service.UpdateProfile(userID, &req); err != nil {
+		httpx.WriteError(w, r, httpx.Validation(err.Error()))
 		return
 	}
 
-	w.Header().Set(
-		"Content-Type",
-		"application/json",
-	)
-
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"message": "Profile updated successfully",
 	})

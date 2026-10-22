@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -74,6 +75,34 @@ func (m *mockAuthRepo) UpdateUserPassword(userID string, passwordHash string) er
 		}
 	}
 	return sql.ErrNoRows
+}
+
+func (m *mockAuthRepo) CreateRefreshToken(token *model.RefreshToken) error {
+	return nil
+}
+
+func (m *mockAuthRepo) GetRefreshToken(tokenHash string) (*model.RefreshToken, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (m *mockAuthRepo) RevokeRefreshToken(tokenHash string) error {
+	return nil
+}
+
+func (m *mockAuthRepo) RevokeUserRefreshTokens(userID string) error {
+	return nil
+}
+
+func (m *mockAuthRepo) RotateRefreshToken(tokenHash string) (*model.RefreshToken, error) {
+	return nil, sql.ErrNoRows
+}
+
+func (m *mockAuthRepo) RevokeFamily(familyID string) error {
+	return nil
+}
+
+func (m *mockAuthRepo) DeleteExpiredRefreshTokens(ctx context.Context) (int64, error) {
+	return 0, nil
 }
 
 func TestForgotPasswordAndResetPassword(t *testing.T) {
