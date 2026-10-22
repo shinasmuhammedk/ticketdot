@@ -49,9 +49,19 @@ temp/
 # Generated tickets/uploads
 uploads/
 tickets/
+data/sent_emails/
 
 # Air (if you use it later)
 .air.toml
 
 # Docker overrides
 docker-compose.override.yml
+
+# Keys and certificates
+*.pem
+*.key
+*.p12
+
+# Local databases and backups
+*.sqlite
+*.bak
